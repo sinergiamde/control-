@@ -13,19 +13,66 @@ Tu objetivo es convertir el extracto bancario adjunto en datos financieros clasi
 
 PASO 1 — DETECTA la industria del negocio (Construcción/Drywall/Remodelación, Transporte/Trucking, Servicios de limpieza, Retail/Reventa, Servicios profesionales, u "Negocio General" si no está claro) según los proveedores y patrones de transacciones. Ajusta la clasificación de gastos según esa industria.
 
-PASO 2 — Clasifica CADA transacción del extracto en una de estas categorías (no omitas ninguna transacción, procesa el extracto completo):
+PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacción, procesa el extracto completo). El campo "category" de cada línea DEBE ser EXACTAMENTE una de las etiquetas de la lista correspondiente de abajo (no inventes etiquetas nuevas; si de verdad ninguna aplica, usa "Otro (especificar)" y agrega una alerta).
 
-INGRESOS (revenues): depósitos, transferencias, wires, ACH, Zelle recibido, cheques recibidos.
+=== INGRESOS (revenues) — category debe ser una de: ===
+- "Transferencia bancaria"
+- "Transferencia electrónica (Wire)"
+- "Zelle"
+- "Cheque"
+- "Depósito en efectivo"
+- "Otro ingreso (especificar)"
 
-COGS (costo de ventas): pagos a subcontratistas (Zelle o cheques a personas), materiales (Home Depot, Lowe's, Capitol Materials, etc.), permisos de obra, software operativo directo, combustible relacionado al trabajo, peajes de trabajo.
+=== COGS (costo de ventas) — category debe ser una de: ===
+- "Materiales"
+- "Insumos"
+- "Almacenamiento"
+- "Gastos de puesta en marcha y traslado"
+- "Costos de subcontratistas"
+- "Combustible (trabajo)"
+- "Peajes (trabajo)"
+- "Permisos de obra"
 
-OPEX (gastos operativos): seguros comerciales (biBERK, etc.), servicios públicos, suscripciones, cargos bancarios, gastos administrativos, marketing, renta, nómina, servicios profesionales, licencias.
+=== OPEX (gastos operativos) — category debe ser una de: ===
+- "Nómina"
+- "Renta (alquiler o hipoteca)"
+- "Luz y agua (servicios)"
+- "Internet"
+- "Seguros comerciales"
+- "Aparcamiento"
+- "Seguro de carro"
+- "Pago mensual de carro"
+- "Reparación y mantenimiento"
+- "Gastos del vehículo"
+- "Marketing y publicidad"
+- "Subscripciones y cuotas de afiliación"
+- "Software empresarial"
+- "Sitio web y alojamiento"
+- "Capacitación y desarrollo"
+- "Licencias y permisos"
+- "Honorarios legales y de cumplimiento"
+- "Servicios profesionales"
+- "Artículos y mobiliario de oficina"
+- "Mobiliario y equipamiento de oficina"
+- "Costos operativos"
+- "Préstamos o deudas incobrables"
+- "Gastos de viaje"
+- "Hoteles o estadía"
+- "Comidas (trabajo — comida rápida/café/snacks)"
 
-FEES (comisiones/cargos bancarios): overdraft, cargos de mantenimiento, comisiones de procesamiento de pagos.
+=== FEES (comisiones/cargos bancarios) — category debe ser una de: ===
+- "Comisiones bancarias"
 
-PERSONAL (no deducible): ropa, entretenimiento, compras personales (Amazon uso personal, etc.), Zelle a familiares sin justificación de negocio, salud/servicios personales, restaurantes/bares (NO comida rápida de trabajo).
+=== PERSONAL (no deducible) — category debe ser una de: ===
+- "Ropa"
+- "Entretenimiento"
+- "Compras personales"
+- "Zelle a familiares (sin justificación de negocio)"
+- "Salud / servicios personales"
+- "Comidas (restaurante/bar)"
+- "Otro personal (especificar)"
 
-REGLA DE COMIDA: comida rápida/café/snacks durante jornada laboral → clasifícalo como OPEX (gasto deducible). Restaurantes/bares → PERSONAL (no deducible).
+REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada laboral → OPEX con category "Comidas (trabajo — comida rápida/café/snacks)". Restaurantes o bares → PERSONAL con category "Comidas (restaurante/bar)". En el campo "detail" de cualquier transacción de comida, especifica si el comercio es un restaurante/bar o un supermercado/tienda, y el nombre del comercio si aparece.
 
 Si algo no está claro, clasifícalo de todas formas en la categoría más probable pero agrégalo también como alerta en "alerts" indicando "Verificar: <descripción>".
 
@@ -42,7 +89,7 @@ REGLAS OBLIGATORIAS:
 - No omitas transacciones, procesa el extracto completo.
 - Usa montos siempre positivos (sin signo negativo) en el campo "amt".
 - El campo "date" usa el formato del extracto tal cual aparece (o vacío si no es legible).
-- El campo "category" es una etiqueta corta de la sub-categoría específica (ej. "Materiales", "Subcontratista", "Zelle personal", "Combustible").
+- El campo "category" debe ser EXACTAMENTE una de las etiquetas listadas arriba para esa sección — esto es crítico para que los subtotales anuales por categoría sean consistentes entre meses.
 - El campo "detail" da contexto breve (ej. nombre del comercio, memo de la transacción).
 - "period" es el rango de fechas del extracto tal como aparece (ej. "Enero 2026" o "01/01/2026 - 01/31/2026").
 - "company" es el nombre del titular de la cuenta o negocio si aparece en el extracto; si no aparece, usa cadena vacía.`;
