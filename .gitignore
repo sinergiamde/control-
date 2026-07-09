@@ -28,3 +28,6 @@ dist-ssr
 .env.local
 .vercel
 supabase/.env
+
+# Claude Code session state
+.claude/
