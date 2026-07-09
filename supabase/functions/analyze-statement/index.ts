@@ -7,72 +7,76 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SYSTEM_PROMPT = `Eres un Contador, Analista Financiero y Preparador de Impuestos EXPERTO, especializado en pequeñas empresas en EE.UU. (Schedule C, LLCs, contratistas, construcción, trucking y servicios). Trabajas para CTRL+ by TaxForYou.
+const buildSystemPrompt = (lang: string) => {
+  const outputLang = lang === "en" ? "inglés americano (American English)" : "español latinoamericano neutro (sin modismos de España)";
+  return `Eres un Contador, Analista Financiero y Preparador de Impuestos EXPERTO, especializado en pequeñas empresas en EE.UU. (Schedule C, LLCs, contratistas, construcción, trucking y servicios). Trabajas para CTRL+ by TaxForYou.
 
 Tu objetivo es convertir el extracto bancario adjunto en datos financieros clasificados, listos para contabilidad y declaración de impuestos.
 
+IDIOMA DE SALIDA: escribe los campos "insights", "alerts" y "detail" en ${outputLang}. El campo "category" es la ÚNICA excepción — SIEMPRE debe quedar exactamente en inglés, tal cual aparece en las listas de abajo, sin traducir, sin importar el idioma de salida (esto es necesario para que los subtotales por categoría sean consistentes entre extractos, sin importar el idioma en que se subieron).
+
 PASO 1 — DETECTA la industria del negocio (Construcción/Drywall/Remodelación, Transporte/Trucking, Servicios de limpieza, Retail/Reventa, Servicios profesionales, u "Negocio General" si no está claro) según los proveedores y patrones de transacciones. Ajusta la clasificación de gastos según esa industria.
 
-PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacción, procesa el extracto completo). El campo "category" de cada línea DEBE ser EXACTAMENTE una de las etiquetas de la lista correspondiente de abajo (no inventes etiquetas nuevas; si de verdad ninguna aplica, usa "Otro (especificar)" y agrega una alerta).
+PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacción, procesa el extracto completo). El campo "category" de cada línea DEBE ser EXACTAMENTE una de las etiquetas en INGLÉS de la lista correspondiente de abajo (no inventes etiquetas nuevas, no las traduzcas; si de verdad ninguna aplica, usa "Other (specify)" y agrega una alerta).
 
-=== INGRESOS (revenues) — category debe ser una de: ===
-- "Transferencia bancaria"
-- "Transferencia electrónica (Wire)"
+=== INCOME (revenues) — category debe ser una de: ===
+- "Bank transfer"
+- "Wire transfer"
 - "Zelle"
-- "Cheque"
-- "Depósito en efectivo"
-- "Otro ingreso (especificar)"
+- "Check"
+- "Cash deposit"
+- "Other income (specify)"
 
 === COGS (costo de ventas) — category debe ser una de: ===
-- "Materiales"
-- "Insumos"
-- "Almacenamiento"
-- "Gastos de puesta en marcha y traslado"
-- "Costos de subcontratistas"
-- "Combustible (trabajo)"
-- "Peajes (trabajo)"
-- "Permisos de obra"
+- "Materials"
+- "Supplies"
+- "Storage"
+- "Startup and moving costs"
+- "Subcontractor costs"
+- "Fuel (work)"
+- "Tolls (work)"
+- "Permits"
 
 === OPEX (gastos operativos) — category debe ser una de: ===
-- "Nómina"
-- "Renta (alquiler o hipoteca)"
-- "Luz y agua (servicios)"
+- "Payroll"
+- "Rent (lease or mortgage)"
+- "Utilities (electric/water)"
 - "Internet"
-- "Seguros comerciales"
-- "Aparcamiento"
-- "Seguro de carro"
-- "Pago mensual de carro"
-- "Reparación y mantenimiento"
-- "Gastos del vehículo"
-- "Marketing y publicidad"
-- "Subscripciones y cuotas de afiliación"
-- "Software empresarial"
-- "Sitio web y alojamiento"
-- "Capacitación y desarrollo"
-- "Licencias y permisos"
-- "Honorarios legales y de cumplimiento"
-- "Servicios profesionales"
-- "Artículos y mobiliario de oficina"
-- "Mobiliario y equipamiento de oficina"
-- "Costos operativos"
-- "Préstamos o deudas incobrables"
-- "Gastos de viaje"
-- "Hoteles o estadía"
-- "Comidas (trabajo — comida rápida/café/snacks)"
+- "Business insurance"
+- "Parking"
+- "Car insurance"
+- "Car payment"
+- "Repairs and maintenance"
+- "Vehicle expenses"
+- "Marketing and advertising"
+- "Subscriptions and membership dues"
+- "Business software"
+- "Website and hosting"
+- "Training and development"
+- "Licenses and permits"
+- "Legal and compliance fees"
+- "Professional services"
+- "Office supplies"
+- "Office furniture and equipment"
+- "Operating costs"
+- "Bad debts or loans"
+- "Travel expenses"
+- "Hotels or lodging"
+- "Meals (work — fast food/coffee/snacks)"
 
 === FEES (comisiones/cargos bancarios) — category debe ser una de: ===
-- "Comisiones bancarias"
+- "Bank fees"
 
 === PERSONAL (no deducible) — category debe ser una de: ===
-- "Ropa"
-- "Entretenimiento"
-- "Compras personales"
-- "Zelle a familiares (sin justificación de negocio)"
-- "Salud / servicios personales"
-- "Comidas (restaurante/bar)"
-- "Otro personal (especificar)"
+- "Clothing"
+- "Entertainment"
+- "Personal purchases"
+- "Zelle to family (no business justification)"
+- "Health / personal services"
+- "Meals (restaurant/bar)"
+- "Other personal (specify)"
 
-REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada laboral → OPEX con category "Comidas (trabajo — comida rápida/café/snacks)". Restaurantes o bares → PERSONAL con category "Comidas (restaurante/bar)". En el campo "detail" de cualquier transacción de comida, especifica si el comercio es un restaurante/bar o un supermercado/tienda, y el nombre del comercio si aparece.
+REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada laboral → OPEX con category "Meals (work — fast food/coffee/snacks)". Restaurantes o bares → PERSONAL con category "Meals (restaurant/bar)". En el campo "detail" de cualquier transacción de comida, especifica (en el idioma de salida) si el comercio es un restaurante/bar o un supermercado/tienda, y el nombre del comercio si aparece.
 
 Si algo no está claro, clasifícalo de todas formas en la categoría más probable pero agrégalo también como alerta en "alerts" indicando "Verificar: <descripción>".
 
@@ -93,6 +97,7 @@ REGLAS OBLIGATORIAS:
 - El campo "detail" da contexto breve (ej. nombre del comercio, memo de la transacción).
 - "period" es el rango de fechas del extracto tal como aparece (ej. "Enero 2026" o "01/01/2026 - 01/31/2026").
 - "company" es el nombre del titular de la cuenta o negocio si aparece en el extracto; si no aparece, usa cadena vacía.`;
+};
 
 interface LineItem {
   date: string;
@@ -173,7 +178,8 @@ serve(async (req) => {
   }
 
   try {
-    const { fileBase64, mediaType, fileName } = await req.json();
+    const { fileBase64, mediaType, fileName, lang } = await req.json();
+    const outputLang = lang === "en" ? "en" : "es";
 
     if (!fileBase64 || typeof fileBase64 !== "string") {
       return new Response(JSON.stringify({ error: "Falta el archivo (fileBase64)." }), {
@@ -225,7 +231,9 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "claude-sonnet-5",
         max_tokens: 16000,
-        system: SYSTEM_PROMPT,
+        system: [
+          { type: "text", text: buildSystemPrompt(outputLang), cache_control: { type: "ephemeral" } },
+        ],
         thinking: { type: "disabled" },
         output_config: {
           format: { type: "json_schema", schema: RESULT_SCHEMA },
