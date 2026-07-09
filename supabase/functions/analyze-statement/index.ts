@@ -224,10 +224,10 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-5",
-        max_tokens: 8000,
+        max_tokens: 16000,
         system: SYSTEM_PROMPT,
+        thinking: { type: "disabled" },
         output_config: {
-          effort: "high",
           format: { type: "json_schema", schema: RESULT_SCHEMA },
         },
         messages: [{ role: "user", content: userContent }],
@@ -252,12 +252,21 @@ serve(async (req) => {
       });
     }
 
+    if (completion.stop_reason === "max_tokens") {
+      console.error("analyze-statement truncated: max_tokens reached", JSON.stringify(completion).slice(0, 500));
+      return new Response(JSON.stringify({ error: "El extracto es demasiado largo para analizarlo de una vez. Intenta subirlo por separado o en partes más cortas." }), {
+        status: 422,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const textBlock = Array.isArray(completion.content)
       ? completion.content.find((b: any) => b.type === "text")
       : null;
 
     if (!textBlock?.text) {
-      throw new Error("La respuesta de Claude no incluyó contenido de texto.");
+      console.error("analyze-statement no text block. stop_reason:", completion.stop_reason, "content:", JSON.stringify(completion.content).slice(0, 500));
+      throw new Error(`La respuesta de Claude no incluyó contenido de texto (stop_reason: ${completion.stop_reason || "desconocido"}).`);
     }
 
     const parsed = JSON.parse(textBlock.text);
