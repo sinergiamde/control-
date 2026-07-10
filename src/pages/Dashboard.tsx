@@ -147,7 +147,11 @@ const Dashboard = () => {
     return s;
   };
 
-  const analyzeOne = async (file: File, existingPeriods: Set<string>, existingFilenames: Set<string>) => {
+  const analyzeOne = async (
+    file: File,
+    existingPeriods: Map<string, string>,
+    existingFilenames: Map<string, string>
+  ) => {
     const fileBase64 = await fileToBase64(file);
     const response = await fetch(ANALYZE_API_URL, {
       method: "POST",
@@ -178,7 +182,17 @@ const Dashboard = () => {
 
       // Detección de duplicado por período (mes/año del extracto)
       if (normPeriod && existingPeriods.has(normPeriod)) {
-        throw new Error(`Extracto duplicado: ya existe un análisis para el período "${period}". No se guardó para no afectar la contabilidad.`);
+        const replace = window.confirm(
+          `Ya existe un extracto guardado para el período "${period}".\n\n¿Quieres volver a leer este archivo y REEMPLAZAR el análisis anterior?`
+        );
+        if (!replace) {
+          throw new Error(`Extracto duplicado: ya existe un análisis para el período "${period}". No se guardó para no afectar la contabilidad.`);
+        }
+        const oldId = existingPeriods.get(normPeriod);
+        if (oldId) {
+          await supabase.from("analyses").delete().eq("id", oldId);
+        }
+        existingPeriods.delete(normPeriod);
       }
 
       const revenues = Array.isArray(src?.revenues) ? src.revenues : [];
@@ -209,14 +223,18 @@ const Dashboard = () => {
         top_category: getTopCategory(src),
       };
 
-      const { error: dbError } = await supabase.from("analyses").insert(insertPayload);
+      const { data: inserted, error: dbError } = await supabase
+        .from("analyses")
+        .insert(insertPayload)
+        .select("id")
+        .single();
       if (dbError) {
         console.error("Insert error:", dbError);
         throw new Error(dbError.message);
       }
 
-      if (normPeriod) existingPeriods.add(normPeriod);
-      existingFilenames.add(file.name.toLowerCase());
+      if (normPeriod && inserted) existingPeriods.set(normPeriod, inserted.id);
+      if (inserted) existingFilenames.set(file.name.toLowerCase(), inserted.id);
     }
     return data;
   };
@@ -230,15 +248,37 @@ const Dashboard = () => {
     // Cargar análisis previos para detectar duplicados
     const { data: prior } = await supabase
       .from("analyses")
-      .select("period, original_filename")
+      .select("id, period, original_filename")
       .eq("user_id", user.id);
 
-    const existingPeriods = new Set<string>(
-      (prior || []).map((r: any) => normalizePeriod(r.period || "")).filter(Boolean)
+    const existingPeriods = new Map<string, string>(
+      (prior || [])
+        .map((r: any) => [normalizePeriod(r.period || ""), r.id] as [string, string])
+        .filter(([key]) => Boolean(key))
     );
-    const existingFilenames = new Set<string>(
-      (prior || []).map((r: any) => String(r.original_filename || "").toLowerCase()).filter(Boolean)
+    const existingFilenames = new Map<string, string>(
+      (prior || [])
+        .map((r: any) => [String(r.original_filename || "").toLowerCase(), r.id] as [string, string])
+        .filter(([key]) => Boolean(key))
     );
+
+    // Si algunos archivos seleccionados ya fueron analizados antes, preguntar una sola vez si se quieren reemplazar
+    const duplicateFilenames = files
+      .map((f) => f.name.toLowerCase())
+      .filter((name) => existingFilenames.has(name));
+
+    if (duplicateFilenames.length > 0) {
+      const replaceAll = window.confirm(
+        `${duplicateFilenames.length} de los ${files.length} archivos ya fueron analizados antes.\n\n¿Quieres volver a leerlos y REEMPLAZAR los análisis anteriores? (Cancelar = omitir los duplicados, como antes)`
+      );
+      if (replaceAll) {
+        const idsToDelete = duplicateFilenames.map((name) => existingFilenames.get(name)!).filter(Boolean);
+        if (idsToDelete.length > 0) {
+          await supabase.from("analyses").delete().in("id", idsToDelete);
+        }
+        duplicateFilenames.forEach((name) => existingFilenames.delete(name));
+      }
+    }
 
     let lastResult: any = null;
     const errors: string[] = [];
@@ -249,7 +289,7 @@ const Dashboard = () => {
       const f = files[i];
       setCurrentFileName(f.name);
 
-      // Duplicado por nombre de archivo (mismo extracto subido otra vez)
+      // Duplicado por nombre de archivo (mismo extracto subido otra vez, y el usuario decidió no reemplazarlo)
       if (existingFilenames.has(f.name.toLowerCase())) {
         duplicates.push(`${f.name} (ya analizado anteriormente)`);
         setProcessedCount(i + 1);
