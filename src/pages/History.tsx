@@ -117,11 +117,21 @@ const History = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, navigate]);
 
+  const previousYear = (new Date().getFullYear() - 1).toString();
+
   const years = useMemo(() => {
     const s = new Set<string>();
     rows.forEach((r) => s.add(getStatementYear(r)));
     return Array.from(s).sort().reverse();
   }, [rows]);
+
+  const rangeLabel = useMemo(() => {
+    if (range === "all") return "Todos los años";
+    if (range === "last3") return "Último trimestre (3 meses)";
+    if (range === "last6") return "Últimos 6 meses";
+    if (range === previousYear) return `Año anterior (${range})`;
+    return `Año ${range}`;
+  }, [range, previousYear]);
 
   useEffect(() => {
     if (!user || !/^\d{4}$/.test(range)) { setAnnualSummary(null); return; }
@@ -233,10 +243,15 @@ const History = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos los años</SelectItem>
-                  <SelectItem value="last3">Últimos 3 meses</SelectItem>
+                  <SelectItem value="last3">Último trimestre (3 meses)</SelectItem>
                   <SelectItem value="last6">Últimos 6 meses</SelectItem>
+                  {!years.includes(previousYear) && (
+                    <SelectItem value={previousYear}>Año anterior ({previousYear})</SelectItem>
+                  )}
                   {years.map((y) => (
-                    <SelectItem key={y} value={y}>Año {y}</SelectItem>
+                    <SelectItem key={y} value={y}>
+                      {y === previousYear ? `Año anterior (${y})` : `Año ${y}`}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -244,17 +259,19 @@ const History = () => {
                 size="sm" variant="outline"
                 disabled={filtered.length === 0 || downloading}
                 onClick={() => handleDownload("excel")}
+                title={`Descargar Excel — ${rangeLabel}`}
               >
                 {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 mr-1" />}
-                Descargar Excel
+                Excel ({rangeLabel})
               </Button>
               <Button
                 size="sm" variant="outline"
                 disabled={filtered.length === 0 || downloading}
                 onClick={() => handleDownload("pdf")}
+                title={`Descargar PDF — ${rangeLabel}`}
               >
                 {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
-                Descargar PDF
+                PDF ({rangeLabel})
               </Button>
             </div>
           </CardHeader>
