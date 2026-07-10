@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/integrations/supabase/client";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Eye, Loader2, History as HistoryIcon, TrendingUp, TrendingDown, Wallet, Trash2, CalendarCheck } from "lucide-react";
+import { Eye, Loader2, History as HistoryIcon, TrendingUp, TrendingDown, Wallet, Trash2, CalendarCheck, FileSpreadsheet, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { buildConsolidatedReport } from "@/utils/consolidateReport";
+import { generateProfessionalExcel } from "@/utils/generateExcel";
+import { generateProfessionalPDF } from "@/utils/generatePDF";
 
 interface AnalysisRow {
   id: string;
@@ -84,13 +88,15 @@ const getStatementYear = (row: AnalysisRow) => {
 type RangeOption = "all" | "last3" | "last6" | string;
 
 const History = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
+  const { lang } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [rows, setRows] = useState<AnalysisRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<RangeOption>("all");
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [annualSummary, setAnnualSummary] = useState<{ generated_at: string; net_income: number } | null>(null);
 
   const fetchRows = async () => {
@@ -167,6 +173,29 @@ const History = () => {
     navigate("/results", { state: { results: row.full_analysis } });
   };
 
+  const handleDownload = async (format: "excel" | "pdf") => {
+    if (filtered.length === 0) return;
+    setDownloading(true);
+    try {
+      const isEnglish = lang === "en";
+      const consolidated = buildConsolidatedReport(
+        filtered.map((r) => r.full_analysis),
+        profile?.name || "",
+        isEnglish
+      );
+      if (format === "excel") await generateProfessionalExcel(consolidated);
+      else generateProfessionalPDF(consolidated);
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "No se pudo generar el archivo.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleDelete = async (row: AnalysisRow) => {
     setDeleting(row.id);
     const { error } = await supabase.from("analyses").delete().eq("id", row.id);
@@ -197,19 +226,37 @@ const History = () => {
               <HistoryIcon className="h-5 w-5 text-primary" />
               Resumen ({filtered.length} extracto{filtered.length === 1 ? "" : "s"})
             </CardTitle>
-            <Select value={range} onValueChange={setRange}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Período" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los años</SelectItem>
-                <SelectItem value="last3">Últimos 3 meses</SelectItem>
-                <SelectItem value="last6">Últimos 6 meses</SelectItem>
-                {years.map((y) => (
-                  <SelectItem key={y} value={y}>Año {y}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select value={range} onValueChange={setRange}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los años</SelectItem>
+                  <SelectItem value="last3">Últimos 3 meses</SelectItem>
+                  <SelectItem value="last6">Últimos 6 meses</SelectItem>
+                  {years.map((y) => (
+                    <SelectItem key={y} value={y}>Año {y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm" variant="outline"
+                disabled={filtered.length === 0 || downloading}
+                onClick={() => handleDownload("excel")}
+              >
+                {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 mr-1" />}
+                Descargar Excel
+              </Button>
+              <Button
+                size="sm" variant="outline"
+                disabled={filtered.length === 0 || downloading}
+                onClick={() => handleDownload("pdf")}
+              >
+                {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
+                Descargar PDF
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {annualSummary && (

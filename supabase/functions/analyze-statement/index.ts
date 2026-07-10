@@ -78,15 +78,20 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 
 REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada laboral → OPEX con category "Meals (work — fast food/coffee/snacks)". Restaurantes o bares → PERSONAL con category "Meals (restaurant/bar)". En el campo "detail" de cualquier transacción de comida, especifica (en el idioma de salida) si el comercio es un restaurante/bar o un supermercado/tienda, y el nombre del comercio si aparece.
 
-Si algo no está claro, clasifícalo de todas formas en la categoría más probable pero agrégalo también como alerta en "alerts" indicando "Verificar: <descripción>".
+Si algo no está claro, clasifícalo de todas formas en la categoría más probable (sin agregar una alerta individual por eso — las alertas se generan aparte, en el Paso 5, solo para patrones que de verdad importan).
 
-Pagos por Zelle deben listarse individualmente (uno por transacción), nunca agrupados.
+Pagos por Zelle deben listarse individualmente (uno por transacción), nunca agrupados en las tablas de revenues/cogs/opex/fees/personal — pero en "alerts" sí deben agruparse por patrón (ver Paso 5).
 
 PASO 3 — Genera un resumen mensual (annualSummary): un registro por cada mes presente en el extracto, con ingresos, gastos y neto de ese mes. Si el extracto cubre un solo mes, igual genera esa única entrada.
 
 PASO 4 — Genera "insights": 3 a 4 observaciones breves y accionables sobre la salud financiera del negocio (ej. margen bruto, categoría de mayor gasto, tendencia).
 
-PASO 5 — Genera "alerts": riesgos o elementos a revisar (transacciones ambiguas, gastos personales grandes, posibles pagos duplicados, patrones inusuales). Si todo está en orden, incluye igual una nota positiva breve.
+PASO 5 — Genera "alerts": MÁXIMO 5 alertas en total, priorizando solo lo que de verdad importa para el negocio o para impuestos:
+  - Montos individuales grandes (>$500) sin descripción de negocio clara.
+  - Patrones repetidos (ej. "múltiples pagos Zelle a individuos sin descripción de negocio, total $X" — UNA sola alerta agrupando todos esos casos, no una por transacción).
+  - Posibles pagos duplicados.
+  - Gastos personales grandes mezclados con la cuenta de negocio.
+  No generes una alerta por cada transacción ambigua individual — agrupa. No agregues alertas para transacciones pequeñas, rutinarias o ya bien identificadas. Si de verdad no hay nada que reportar, incluye una sola nota breve indicando que todo está en orden (no la mezcles con las alertas de riesgo).
 
 REGLAS OBLIGATORIAS:
 - No inventes transacciones que no estén en el documento.
@@ -94,7 +99,7 @@ REGLAS OBLIGATORIAS:
 - Usa montos siempre positivos (sin signo negativo) en el campo "amt".
 - El campo "date" usa el formato del extracto tal cual aparece (o vacío si no es legible).
 - El campo "category" debe ser EXACTAMENTE una de las etiquetas listadas arriba para esa sección — esto es crítico para que los subtotales anuales por categoría sean consistentes entre meses.
-- El campo "detail" da contexto breve (ej. nombre del comercio, memo de la transacción).
+- El campo "detail" es OPCIONAL y debe ser muy breve (máx. 6 palabras, ej. nombre del comercio). Si no aporta nada útil, déjalo como cadena vacía "" — no rellenes con texto innecesario.
 - "period" es el rango de fechas del extracto tal como aparece (ej. "Enero 2026" o "01/01/2026 - 01/31/2026").
 - "company" es el nombre del titular de la cuenta o negocio si aparece en el extracto; si no aparece, usa cadena vacía.`;
 };
