@@ -117,41 +117,7 @@ const Dashboard = () => {
     e.target.value = "";
   };
 
-  // Normaliza period a "YYYY-MM" cuando es posible para comparar duplicados
-  const normalizePeriod = (period: string): string => {
-    if (!period) return "";
-    const s = String(period).toLowerCase().trim();
-    const ym = s.match(/(20\d{2})[-/\s.](0?[1-9]|1[0-2])/);
-    if (ym) return `${ym[1]}-${ym[2].padStart(2, "0")}`;
-    const my = s.match(/(0?[1-9]|1[0-2])[-/\s.](20\d{2})/);
-    if (my) return `${my[2]}-${my[1].padStart(2, "0")}`;
-    const months: Record<string, string> = {
-      enero: "01", ene: "01", january: "01", jan: "01",
-      febrero: "02", feb: "02", february: "02",
-      marzo: "03", mar: "03", march: "03",
-      abril: "04", abr: "04", april: "04", apr: "04",
-      mayo: "05", may: "05",
-      junio: "06", jun: "06", june: "06",
-      julio: "07", jul: "07", july: "07",
-      agosto: "08", ago: "08", aug: "08", august: "08",
-      septiembre: "09", sep: "09", sept: "09", september: "09",
-      octubre: "10", oct: "10", october: "10",
-      noviembre: "11", nov: "11", november: "11",
-      diciembre: "12", dic: "12", dec: "12", december: "12",
-    };
-    for (const [name, num] of Object.entries(months)) {
-      const re = new RegExp(`${name}[^0-9]*(20\\d{2})`);
-      const m = s.match(re);
-      if (m) return `${m[1]}-${num}`;
-    }
-    return s;
-  };
-
-  const analyzeOne = async (
-    file: File,
-    existingPeriods: Map<string, string>,
-    existingFilenames: Map<string, string>
-  ) => {
+  const analyzeOne = async (file: File) => {
     const fileBase64 = await fileToBase64(file);
     const response = await fetch(ANALYZE_API_URL, {
       method: "POST",
@@ -178,22 +144,6 @@ const Dashboard = () => {
     if (user) {
       const src: any = getAnalysisSource(data);
       const period = src.period || "";
-      const normPeriod = normalizePeriod(period);
-
-      // Detección de duplicado por período (mes/año del extracto)
-      if (normPeriod && existingPeriods.has(normPeriod)) {
-        const replace = window.confirm(
-          `Ya existe un extracto guardado para el período "${period}".\n\n¿Quieres volver a leer este archivo y REEMPLAZAR el análisis anterior?`
-        );
-        if (!replace) {
-          throw new Error(`Extracto duplicado: ya existe un análisis para el período "${period}". No se guardó para no afectar la contabilidad.`);
-        }
-        const oldId = existingPeriods.get(normPeriod);
-        if (oldId) {
-          await supabase.from("analyses").delete().eq("id", oldId);
-        }
-        existingPeriods.delete(normPeriod);
-      }
 
       const revenues = Array.isArray(src?.revenues) ? src.revenues : [];
       const cogs = Array.isArray(src?.cogs) ? src.cogs : [];
@@ -223,18 +173,11 @@ const Dashboard = () => {
         top_category: getTopCategory(src),
       };
 
-      const { data: inserted, error: dbError } = await supabase
-        .from("analyses")
-        .insert(insertPayload)
-        .select("id")
-        .single();
+      const { error: dbError } = await supabase.from("analyses").insert(insertPayload);
       if (dbError) {
         console.error("Insert error:", dbError);
         throw new Error(dbError.message);
       }
-
-      if (normPeriod && inserted) existingPeriods.set(normPeriod, inserted.id);
-      if (inserted) existingFilenames.set(file.name.toLowerCase(), inserted.id);
     }
     return data;
   };
@@ -245,83 +188,27 @@ const Dashboard = () => {
     setUploadProgress(0);
     setProcessedCount(0);
 
-    // Cargar análisis previos para detectar duplicados
-    const { data: prior } = await supabase
-      .from("analyses")
-      .select("id, period, original_filename")
-      .eq("user_id", user.id);
-
-    const existingPeriods = new Map<string, string>(
-      (prior || [])
-        .map((r: any) => [normalizePeriod(r.period || ""), r.id] as [string, string])
-        .filter(([key]) => Boolean(key))
-    );
-    const existingFilenames = new Map<string, string>(
-      (prior || [])
-        .map((r: any) => [String(r.original_filename || "").toLowerCase(), r.id] as [string, string])
-        .filter(([key]) => Boolean(key))
-    );
-
-    // Si algunos archivos seleccionados ya fueron analizados antes, preguntar una sola vez si se quieren reemplazar
-    const duplicateFilenames = files
-      .map((f) => f.name.toLowerCase())
-      .filter((name) => existingFilenames.has(name));
-
-    if (duplicateFilenames.length > 0) {
-      const replaceAll = window.confirm(
-        `${duplicateFilenames.length} de los ${files.length} archivos ya fueron analizados antes.\n\n¿Quieres volver a leerlos y REEMPLAZAR los análisis anteriores? (Cancelar = omitir los duplicados, como antes)`
-      );
-      if (replaceAll) {
-        const idsToDelete = duplicateFilenames.map((name) => existingFilenames.get(name)!).filter(Boolean);
-        if (idsToDelete.length > 0) {
-          await supabase.from("analyses").delete().in("id", idsToDelete);
-        }
-        duplicateFilenames.forEach((name) => existingFilenames.delete(name));
-      }
-    }
-
     let lastResult: any = null;
     const errors: string[] = [];
-    const duplicates: string[] = [];
     let saved = 0;
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       setCurrentFileName(f.name);
 
-      // Duplicado por nombre de archivo (mismo extracto subido otra vez, y el usuario decidió no reemplazarlo)
-      if (existingFilenames.has(f.name.toLowerCase())) {
-        duplicates.push(`${f.name} (ya analizado anteriormente)`);
-        setProcessedCount(i + 1);
-        setUploadProgress(((i + 1) / files.length) * 100);
-        continue;
-      }
-
       try {
-        lastResult = await analyzeOne(f, existingPeriods, existingFilenames);
+        lastResult = await analyzeOne(f);
         saved++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`Error analizando ${f.name}:`, msg);
-        if (msg.toLowerCase().includes("duplicado")) {
-          duplicates.push(`${f.name}: ${msg}`);
-        } else {
-          errors.push(`${f.name}: ${msg}`);
-        }
+        errors.push(`${f.name}: ${msg}`);
       }
       setProcessedCount(i + 1);
       setUploadProgress(((i + 1) / files.length) * 100);
     }
 
     setLoading(false);
-
-    if (duplicates.length > 0) {
-      toast({
-        title: `⚠️ ${duplicates.length} extracto(s) duplicado(s)`,
-        description: `${duplicates.join(" | ")}. Para mantener la contabilidad correcta, los duplicados no se guardaron.`,
-        variant: "destructive",
-      });
-    }
 
     if (errors.length > 0) {
       toast({
@@ -332,7 +219,10 @@ const Dashboard = () => {
     }
 
     if (saved > 0) {
-      toast({ title: "✅", description: `${saved} análisis guardado(s)` });
+      toast({
+        title: "✅",
+        description: `${saved} análisis guardado(s). Revisa el Historial — si dos extractos resultan ser del mismo período, ahí te avisamos para que elimines el que no corresponda.`,
+      });
 
       if (saved === 1 && files.length === 1 && lastResult) {
         navigate("/results", { state: { results: lastResult } });

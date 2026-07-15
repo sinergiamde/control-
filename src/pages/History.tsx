@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Eye, Loader2, History as HistoryIcon, TrendingUp, TrendingDown, Wallet, Trash2, CalendarCheck, FileSpreadsheet, FileText } from "lucide-react";
+import { Eye, Loader2, History as HistoryIcon, TrendingUp, TrendingDown, Wallet, Trash2, CalendarCheck, FileSpreadsheet, FileText, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { buildConsolidatedReport } from "@/utils/consolidateReport";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
+import { normalizePeriod } from "@/utils/normalizePeriod";
 
 interface AnalysisRow {
   id: string;
@@ -154,6 +155,19 @@ const History = () => {
     }
     return rows.filter((r) => getStatementYear(r) === range);
   }, [rows, range]);
+
+  const duplicatePeriodIds = useMemo(() => {
+    const groups: Record<string, AnalysisRow[]> = {};
+    rows.forEach((r) => {
+      const key = normalizePeriod(r.period || "");
+      if (!key) return;
+      (groups[key] = groups[key] || []).push(r);
+    });
+    const duplicateGroups = Object.values(groups).filter((g) => g.length > 1);
+    const ids = new Set<string>();
+    duplicateGroups.forEach((g) => g.forEach((r) => ids.add(r.id)));
+    return { ids, groups: duplicateGroups };
+  }, [rows]);
 
   const totals = useMemo(() => {
     const t = { revenues: 0, cogs: 0, opex: 0, personal: 0, fees: 0, spent: 0 };
@@ -339,6 +353,29 @@ const History = () => {
           </CardContent>
         </Card>
 
+        {duplicatePeriodIds.groups.length > 0 && (
+          <Card className="border-destructive/50 bg-destructive/5">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-2 text-sm">
+                <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-destructive">
+                    Tienes {duplicatePeriodIds.groups.length} período(s) con más de un extracto guardado
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    Revisa las filas marcadas abajo (mismo mes/año) y elimina el que no corresponda con el botón de basura, para que la contabilidad no se duplique.
+                  </p>
+                  {duplicatePeriodIds.groups.map((g, i) => (
+                    <p key={i} className="text-xs text-foreground">
+                      • {g[0].period || "—"}: {g.map((r) => r.original_filename || r.company || r.id.slice(0, 6)).join(", ")}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle>Extractos del período</CardTitle>
@@ -362,7 +399,7 @@ const History = () => {
                   </TableHeader>
                   <TableBody>
                     {filtered.map((row) => (
-                      <TableRow key={row.id}>
+                      <TableRow key={row.id} className={duplicatePeriodIds.ids.has(row.id) ? "bg-destructive/10" : ""}>
                         <TableCell>
                           {new Date(row.created_at).toLocaleDateString("es-CO", {
                             year: "numeric", month: "short", day: "numeric",
@@ -371,7 +408,12 @@ const History = () => {
                         <TableCell className="font-medium max-w-[200px] truncate">
                           {row.original_filename || row.company || "—"}
                         </TableCell>
-                        <TableCell>{row.period || "—"}</TableCell>
+                        <TableCell>
+                          {duplicatePeriodIds.ids.has(row.id) && (
+                            <AlertTriangle className="h-3.5 w-3.5 text-destructive inline mr-1" />
+                          )}
+                          {row.period || "—"}
+                        </TableCell>
                         <TableCell className="text-right text-primary">{fmt(row.revenues_total)}</TableCell>
                         <TableCell className="text-right text-destructive">{fmt(row.total_spent)}</TableCell>
                         <TableCell className="text-muted-foreground">{row.top_category || "—"}</TableCell>
