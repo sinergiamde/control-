@@ -15,6 +15,14 @@ interface Section {
   totalLabel: string;
 }
 
+interface ThirdPartyPayment {
+  method: string;
+  identifier: string;
+  date?: string;
+  amt: number;
+  category?: string;
+}
+
 interface ResultsData {
   companyName?: string;
   period?: string;
@@ -28,6 +36,7 @@ interface ResultsData {
   sections: Section[];
   kpis: { label: string; value: string; description: string }[];
   redFlags?: string[];
+  thirdPartyPayments?: ThirdPartyPayment[];
 }
 
 const COLORS = {
@@ -62,9 +71,10 @@ function styleRow(
   bgColor: string,
   fontColor: string,
   bold: boolean,
-  fontSize = 10
+  fontSize = 10,
+  cols = 4
 ) {
-  for (let col = 1; col <= 4; col++) {
+  for (let col = 1; col <= cols; col++) {
     const cell = ws.getCell(row, col);
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bgColor } };
     cell.font = { name: "Arial", size: fontSize, bold, color: { argb: fontColor } };
@@ -243,6 +253,78 @@ export async function generateProfessionalExcel(data: ResultsData) {
   ws.mergeCells(r, 1, r, 4);
   ws.getCell(r, 1).value = "Prepared by CTRL+ by TaxForYou | www.taxforyou.com";
   styleRow(ws, r, COLORS.altRow2, COLORS.detailFont, false, 8);
+
+  if (data.thirdPartyPayments && data.thirdPartyPayments.length > 0) {
+    const ws2 = wb.addWorksheet("Pagos a Terceros", { properties: { defaultColWidth: 20 } });
+    ws2.getColumn(1).width = 14;
+    ws2.getColumn(2).width = 30;
+    ws2.getColumn(3).width = 14;
+    ws2.getColumn(4).width = 16;
+    ws2.getColumn(5).width = 26;
+
+    let r2 = 1;
+    ws2.mergeCells(r2, 1, r2, 5);
+    ws2.getCell(r2, 1).value = "PAGOS A TERCEROS — CHEQUES Y ZELLE (para determinar 1099)";
+    styleRow(ws2, r2, COLORS.headerBg, COLORS.headerFont, true, 12, 5);
+    ws2.getRow(r2).height = 26;
+    r2++;
+
+    ws2.getCell(r2, 1).value = "Método";
+    ws2.getCell(r2, 2).value = "Nombre / N° de cheque";
+    ws2.getCell(r2, 3).value = "Fecha";
+    ws2.getCell(r2, 4).value = "Monto";
+    ws2.getCell(r2, 5).value = "Categoría";
+    styleRow(ws2, r2, "34495E", COLORS.headerFont, true, 10, 5);
+    r2++;
+
+    const sorted = [...data.thirdPartyPayments].sort((a, b) =>
+      a.method === b.method ? a.identifier.localeCompare(b.identifier) : a.method.localeCompare(b.method)
+    );
+
+    let groupKey = "";
+    let groupStartRow = r2;
+    let rowIndex = 0;
+
+    const writeSubtotal = (key: string, startRow: number, endRow: number) => {
+      ws2.getCell(r2, 1).value = "";
+      ws2.getCell(r2, 2).value = `Total — ${key}`;
+      ws2.getCell(r2, 3).value = "";
+      ws2.getCell(r2, 4).value = { formula: `SUM(D${startRow}:D${endRow})` } as any;
+      ws2.getCell(r2, 4).numFmt = "#,##0.00";
+      ws2.getCell(r2, 5).value = "";
+      styleRow(ws2, r2, "EBF5FB", "000000", true, 10, 5);
+      r2++;
+    };
+
+    sorted.forEach((p) => {
+      const key = `${p.method}: ${p.identifier}`;
+      if (groupKey && key !== groupKey && rowIndex > 0) {
+        writeSubtotal(groupKey, groupStartRow, r2 - 1);
+        groupStartRow = r2;
+      }
+      groupKey = key;
+
+      const bgColor = rowIndex % 2 === 0 ? COLORS.altRow2 : COLORS.altRow1;
+      ws2.getCell(r2, 1).value = p.method;
+      ws2.getCell(r2, 2).value = p.identifier;
+      ws2.getCell(r2, 3).value = p.date || "";
+      ws2.getCell(r2, 4).value = p.amt;
+      ws2.getCell(r2, 4).numFmt = "#,##0.00";
+      ws2.getCell(r2, 5).value = p.category || "";
+      styleRow(ws2, r2, bgColor, "000000", false, 10, 5);
+      r2++;
+      rowIndex++;
+    });
+
+    if (groupKey) writeSubtotal(groupKey, groupStartRow, r2 - 1);
+
+    const grandTotal = data.thirdPartyPayments.reduce((s, p) => s + p.amt, 0);
+    r2++;
+    ws2.getCell(r2, 1).value = "TOTAL GENERAL";
+    ws2.getCell(r2, 4).value = grandTotal;
+    ws2.getCell(r2, 4).numFmt = "#,##0.00";
+    styleRow(ws2, r2, COLORS.netIncomeBg, "000000", true, 11, 5);
+  }
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {

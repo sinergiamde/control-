@@ -50,7 +50,17 @@ interface ResultsData {
   sections: Section[];
   kpis: KPI[];
   redFlags?: string[];
+  thirdPartyPayments?: { method: string; identifier: string; date?: string; amt: number; category?: string }[];
 }
+
+const normalizeThirdParty = (items: any[] = []) =>
+  (Array.isArray(items) ? items : []).map((p) => ({
+    method: String(p?.method || ""),
+    identifier: String(p?.identifier || ""),
+    date: p?.date ? String(p.date) : "",
+    amt: toNumber(p?.amt ?? p?.amount),
+    category: p?.category ? String(p.category) : "",
+  }));
 
 const AnimatedNumber = ({ value, prefix = "$", delay = 0 }: { value: number; prefix?: string; delay?: number }) => {
   const [display, setDisplay] = useState(0);
@@ -339,6 +349,7 @@ const transformAPIResponse = (raw: any): ResultsData => {
         },
       ],
       redFlags: source.alerts || source.redFlags || source.red_flags || [],
+      thirdPartyPayments: normalizeThirdParty(source?.thirdPartyPayments),
     };
   }
 

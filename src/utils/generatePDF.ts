@@ -15,6 +15,14 @@ interface Section {
   totalLabel: string;
 }
 
+interface ThirdPartyPayment {
+  method: string;
+  identifier: string;
+  date?: string;
+  amt: number;
+  category?: string;
+}
+
 interface ResultsData {
   companyName?: string;
   period?: string;
@@ -28,6 +36,7 @@ interface ResultsData {
   sections: Section[];
   kpis: { label: string; value: string; description: string }[];
   redFlags?: string[];
+  thirdPartyPayments?: ThirdPartyPayment[];
 }
 
 const COLORS = {
@@ -201,6 +210,60 @@ export function generateProfessionalPDF(data: ResultsData) {
       margin: { left: 14, right: 14 },
     });
     y = (doc as any).lastAutoTable.finalY + 6;
+  }
+
+  if (data.thirdPartyPayments && data.thirdPartyPayments.length > 0) {
+    doc.addPage();
+    y = 14;
+
+    doc.setFillColor(...COLORS.headerBg);
+    doc.rect(0, 0, pageWidth, 14, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("PAGOS A TERCEROS — CHEQUES Y ZELLE (para determinar 1099)", 14, 9);
+    y = 20;
+
+    const sorted = [...data.thirdPartyPayments].sort((a, b) =>
+      a.method === b.method ? a.identifier.localeCompare(b.identifier) : a.method.localeCompare(b.method)
+    );
+
+    const grouped: Record<string, ThirdPartyPayment[]> = {};
+    sorted.forEach((p) => {
+      const key = `${p.method}: ${p.identifier}`;
+      (grouped[key] = grouped[key] || []).push(p);
+    });
+
+    const body: any[] = [];
+    Object.entries(grouped).forEach(([key, payments]) => {
+      payments.forEach((p) => {
+        body.push([p.method, p.identifier, p.date || "", fmt(p.amt), p.category || ""]);
+      });
+      const subtotal = payments.reduce((s, p) => s + p.amt, 0);
+      body.push([{ content: `Total — ${key}`, colSpan: 3, styles: { fontStyle: "bold" } }, fmt(subtotal), ""]);
+    });
+
+    autoTable(doc, {
+      startY: y,
+      head: [["Método", "Nombre / N° cheque", "Fecha", "Monto", "Categoría"]],
+      body,
+      theme: "plain",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [52, 73, 94] as [number, number, number], textColor: COLORS.white, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: COLORS.altGray },
+      margin: { left: 14, right: 14 },
+    });
+    y = (doc as any).lastAutoTable.finalY + 4;
+
+    const grandTotal = data.thirdPartyPayments.reduce((s, p) => s + p.amt, 0);
+    autoTable(doc, {
+      startY: y,
+      body: [["TOTAL GENERAL", fmt(grandTotal)]],
+      theme: "plain",
+      styles: { fontSize: 10, cellPadding: 3, fontStyle: "bold" },
+      bodyStyles: { fillColor: COLORS.totalGreen },
+      margin: { left: 14, right: 14 },
+    });
   }
 
   doc.setFontSize(7);

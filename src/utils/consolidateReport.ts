@@ -34,6 +34,7 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
   const personalMap: Record<string, number> = {};
   const alerts: string[] = [];
   const periods: string[] = [];
+  const thirdPartyPayments: { method: string; identifier: string; date?: string; amt: number; category?: string }[] = [];
 
   for (const data of allData) {
     const src = getAnalysisSource(data);
@@ -43,6 +44,17 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
     addToCategoryMap(personalMap, src?.personal);
     if (Array.isArray(src?.alerts)) alerts.push(...src.alerts);
     if (src?.period) periods.push(String(src.period));
+    if (Array.isArray(src?.thirdPartyPayments)) {
+      for (const p of src.thirdPartyPayments) {
+        thirdPartyPayments.push({
+          method: String(p?.method || ""),
+          identifier: String(p?.identifier || ""),
+          date: p?.date ? String(p.date) : "",
+          amt: toNumber(p?.amt ?? p?.amount),
+          category: p?.category ? String(p.category) : "",
+        });
+      }
+    }
   }
 
   const totalRevenue = Object.values(revenueMap).reduce((s, v) => s + v, 0);
@@ -77,5 +89,6 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
       { label: isEnglish ? "Net Margin" : "Margen Neto", value: pct(netIncome), description: "" },
     ],
     redFlags: alerts,
+    thirdPartyPayments,
   };
 };

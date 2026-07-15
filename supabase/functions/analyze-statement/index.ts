@@ -72,6 +72,7 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 - "Entertainment"
 - "Personal purchases"
 - "Zelle to family (no business justification)"
+- "Personal bank transfer"
 - "Health / personal services"
 - "Meals (restaurant/bar)"
 - "Other personal (specify)"
@@ -81,6 +82,8 @@ REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada lab
 Si algo no está claro, clasifícalo de todas formas en la categoría más probable (sin agregar una alerta individual por eso — las alertas se generan aparte, en el Paso 5, solo para patrones que de verdad importan).
 
 Pagos por Zelle deben listarse individualmente (uno por transacción), nunca agrupados en las tablas de revenues/cogs/opex/fees/personal — pero en "alerts" sí deben agruparse por patrón (ver Paso 5).
+
+IMPORTANTE — NO OMITAS NINGUNA TRANSACCIÓN: procesa absolutamente todas las líneas del extracto, incluyendo transferencias electrónicas banco-a-banco ("Online Transfer", "Electronic Withdrawal", transferencias a otra cuenta propia, etc.) — estas van en PERSONAL con category "Personal bank transfer" si no tienen justificación de negocio clara. Nunca dejes una transacción sin clasificar ni la excluyas del JSON final.
 
 PASO 3 — Genera un resumen mensual (annualSummary): un registro por cada mes presente en el extracto, con ingresos, gastos y neto de ese mes. Si el extracto cubre un solo mes, igual genera esa única entrada.
 
@@ -92,6 +95,12 @@ PASO 5 — Genera "alerts": MÁXIMO 5 alertas en total, priorizando solo lo que 
   - Posibles pagos duplicados.
   - Gastos personales grandes mezclados con la cuenta de negocio.
   No generes una alerta por cada transacción ambigua individual — agrupa. No agregues alertas para transacciones pequeñas, rutinarias o ya bien identificadas. Si de verdad no hay nada que reportar, incluye una sola nota breve indicando que todo está en orden (no la mezcles con las alertas de riesgo).
+
+PASO 6 — Genera "thirdPartyPayments": UNA entrada por cada CHEQUE y por cada pago por ZELLE que ya hayas clasificado en el Paso 2 (sin importar si quedaron en COGS, OPEX o PERSONAL). Esto es indispensable para que el negocio sepa a quién debe reportarle un formulario 1099 al final del año.
+  - Para cheques: "method"="Check", "identifier"=el número de cheque exacto tal como aparece en el extracto (ej. "1787").
+  - Para Zelle: "method"="Zelle", "identifier"=el nombre del destinatario/beneficiario exacto tal como aparece (ej. "Tony Signs").
+  - Incluye "date", "amt" (positivo) y "category" (la misma categoría exacta que le asignaste a esa transacción en el Paso 2).
+  - Si el mismo número de cheque o la misma persona recibe varios pagos, lista cada pago por separado (no los sumes en una sola entrada).
 
 REGLAS OBLIGATORIAS:
 - No inventes transacciones que no estén en el documento.
@@ -137,6 +146,19 @@ const monthSchema = {
   additionalProperties: false,
 };
 
+const thirdPartyPaymentSchema = {
+  type: "object",
+  properties: {
+    method: { type: "string" },
+    identifier: { type: "string" },
+    date: { type: "string" },
+    amt: { type: "number" },
+    category: { type: "string" },
+  },
+  required: ["method", "identifier", "date", "amt", "category"],
+  additionalProperties: false,
+};
+
 const RESULT_SCHEMA = {
   type: "object",
   properties: {
@@ -149,13 +171,14 @@ const RESULT_SCHEMA = {
     opex: { type: "array", items: lineItemSchema },
     fees: { type: "array", items: lineItemSchema },
     personal: { type: "array", items: lineItemSchema },
+    thirdPartyPayments: { type: "array", items: thirdPartyPaymentSchema },
     insights: { type: "array", items: { type: "string" } },
     alerts: { type: "array", items: { type: "string" } },
     annualSummary: { type: "array", items: monthSchema },
   },
   required: [
     "company", "period", "industry", "annualYear",
-    "revenues", "cogs", "opex", "fees", "personal",
+    "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments",
     "insights", "alerts", "annualSummary",
   ],
   additionalProperties: false,
