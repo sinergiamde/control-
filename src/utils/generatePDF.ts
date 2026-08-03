@@ -445,7 +445,7 @@ export function generateProfessionalPDF(data: ResultsData) {
   renderOpexPage(doc, pageWidth, data);
 
   doc.addPage();
-  renderLineItemsPage(doc, pageWidth, "GASTOS PERSONALES (No Deducibles)", data.period || "", data.sections.find((s) => s.kind === "personal"), SECTION_COLOR_BY_KIND.personal);
+  renderLineItemsPage(doc, pageWidth, "Other Expenses/Possible Deductions", data.period || "", data.sections.find((s) => s.kind === "personal"), SECTION_COLOR_BY_KIND.personal);
 
   doc.addPage();
   renderFullPLPage(doc, pageWidth, data);

@@ -607,7 +607,7 @@ export async function generateProfessionalExcel(data: ResultsData) {
   addLineItemSheet(wb, "INGRESOS", "INGRESOS", data.period || "", data.sections.find((s) => s.kind === "revenue"), data.totalRevenue);
   addLineItemSheet(wb, "COGS", "COGS (Costo de Ventas)", data.period || "", data.sections.find((s) => s.kind === "cogs"), data.totalRevenue);
   addOpexSheet(wb, data);
-  addLineItemSheet(wb, "GASTOS PERSONALES", "GASTOS PERSONALES (No Deducibles)", data.period || "", data.sections.find((s) => s.kind === "personal"), data.totalRevenue);
+  addLineItemSheet(wb, "OTHER EXPENSES", "Other Expenses/Possible Deductions", data.period || "", data.sections.find((s) => s.kind === "personal"), data.totalRevenue);
   addThirdPartySheet(wb, data);
   addFullPLSheet(wb, data);
   addAlertsSheet(wb, data);
