@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -258,6 +259,23 @@ serve(async (req) => {
   }
 
   try {
+    // This call runs a full statement analysis through Claude — real per-call cost. Requiring a
+    // logged-in user (not just the public anon key any visitor can read from the built JS bundle)
+    // stops anyone off the internet from scripting free/unlimited analyses on our AI budget.
+    const authHeader = req.headers.get("Authorization") || "";
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Debes iniciar sesión para analizar un extracto." }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { fileBase64, mediaType, fileName } = await req.json();
 
     if (!fileBase64 || typeof fileBase64 !== "string") {

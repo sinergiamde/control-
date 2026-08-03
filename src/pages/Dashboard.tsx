@@ -76,7 +76,7 @@ const getTopCategory = (source: any) => {
 
 const Dashboard = () => {
   const { t, lang } = useLanguage();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, session, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [files, setFiles] = useState<File[]>([]);
@@ -123,7 +123,7 @@ const Dashboard = () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
       body: JSON.stringify({
         fileBase64,

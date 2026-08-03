@@ -21,6 +21,17 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    // This job uses the service-role key to read/rewrite EVERY user's data, bypassing RLS — it must
+    // only ever run from our own pg_cron schedule, never from a request carrying just the public
+    // anon key (or nothing). Reject anything that doesn't present the shared cron secret.
+    const CRON_SECRET = Deno.env.get("CRON_SECRET");
+    if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);

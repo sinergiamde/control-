@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageCircle, X, Send, Loader2, Bot, User, Sparkles } from "lucide-react";
@@ -22,6 +23,7 @@ const suggestionsES = [
 
 const ChatBot = () => {
   const { lang } = useLanguage();
+  const { session } = useAuth();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -64,7 +66,7 @@ const ChatBot = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({ messages: allMessages, lang }),
       });
@@ -104,7 +106,7 @@ const ChatBot = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, isLoading, lang]);
+  }, [messages, isLoading, lang, session]);
 
   return (
     <>
