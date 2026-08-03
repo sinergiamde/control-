@@ -1,6 +1,6 @@
 import { reconcileStatement } from "./reconciliation";
 import { FOOD_OPEX_CATEGORY, PERSONAL_TRANSFER_CATEGORY, PERSONAL_THIRD_PARTY_CATEGORIES, type LineItem, type ThirdPartyPayment } from "./reportTypes";
-import { STR, tr, translateCategory } from "./i18n";
+import { STR, tr, translateCategory, pickText, pickArray } from "./i18n";
 
 const toNumber = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) return Math.abs(value);
@@ -71,7 +71,7 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
       .filter(isThirdPartyCategory)
       .reduce((sum: number, item: any) => sum + toNumber(item?.amt ?? item?.amount), 0);
 
-    if (Array.isArray(src?.alerts)) alerts.push(...src.alerts);
+    alerts.push(...pickArray(src, "alerts", isEnglish));
     if (period) periods.push(period);
 
     if (Array.isArray(src?.thirdPartyPayments)) {
@@ -84,8 +84,8 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
           date: p?.date ? String(p.date) : "",
           amt: toNumber(p?.amt ?? p?.amount),
           category: p?.category ? translateCategory(String(p.category), isEnglish) : "",
-          classification: p?.classification ? String(p.classification) : "",
-          alert: p?.alert ? String(p.alert) : "",
+          classification: pickText(p, "classification", isEnglish),
+          alert: pickText(p, "alert", isEnglish),
         });
       }
     }
@@ -94,7 +94,7 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
       .filter((item: any) => item?.category === PERSONAL_TRANSFER_CATEGORY)
       .forEach((item: any) => {
         const amount = toNumber(item?.amt ?? item?.amount);
-        const detailParts = [period, item?.date, item?.detail].filter(Boolean);
+        const detailParts = [period, item?.date, pickText(item, "detail", isEnglish)].filter(Boolean);
         rawPersonalTransfers.push({
           name: item?.desc || item?.name || "Unknown",
           amount,

@@ -7,13 +7,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const buildSystemPrompt = (lang: string) => {
-  const outputLang = lang === "en" ? "inglés americano (American English)" : "español latinoamericano neutro (sin modismos de España)";
+const buildSystemPrompt = () => {
   return `Eres un Contador, Analista Financiero y Preparador de Impuestos EXPERTO, especializado en pequeñas empresas en EE.UU. (Schedule C, LLCs, contratistas, construcción, trucking y servicios). Trabajas para CTRL+ by TaxForYou.
 
 Tu objetivo es convertir el extracto bancario adjunto en datos financieros clasificados, listos para contabilidad y declaración de impuestos.
 
-IDIOMA DE SALIDA: escribe los campos "insights", "alerts" y "detail" en ${outputLang}. El campo "category" es la ÚNICA excepción — SIEMPRE debe quedar exactamente en inglés, tal cual aparece en las listas de abajo, sin traducir, sin importar el idioma de salida (esto es necesario para que los subtotales por categoría sean consistentes entre extractos, sin importar el idioma en que se subieron).
+IDIOMA DE SALIDA: la aplicación permite ver cada reporte en inglés o en español, así que TODO campo de texto libre debe generarse en AMBOS idiomas a la vez, en dos campos paralelos con sufijo "_en" y "_es" (ej. "detail_en" y "detail_es", "insights_en" e "insights_es", "alerts_en" y "alerts_es", "classification_en"/"classification_es", "alert_en"/"alert_es" en thirdPartyPayments). Ambas versiones deben decir exactamente lo mismo, solo cambia el idioma — "_en" en inglés americano (American English), "_es" en español latinoamericano neutro (sin modismos de España). El campo "category" es la ÚNICA excepción — SIEMPRE debe quedar exactamente en inglés, tal cual aparece en las listas de abajo, sin traducir, en un solo campo (no lleva _en/_es), sin importar lo anterior (esto es necesario para que los subtotales por categoría sean consistentes entre extractos, sin importar el idioma en que se subieron).
 
 PASO 1 — DETECTA la industria del negocio (Construcción/Drywall/Remodelación, Transporte/Trucking, Servicios de limpieza, Retail/Reventa, Servicios profesionales, u "Negocio General" si no está claro) según los proveedores y patrones de transacciones. Ajusta la clasificación de gastos según esa industria.
 
@@ -77,9 +76,9 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 - "Meals (restaurant/bar)"
 - "Other personal (specify)"
 
-REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada laboral → OPEX con category "Meals (work — fast food/coffee/snacks)". Restaurantes o bares → PERSONAL con category "Meals (restaurant/bar)". En el campo "detail" de cualquier transacción de comida, especifica (en el idioma de salida) si el comercio es un restaurante/bar o un supermercado/tienda, y el nombre del comercio si aparece.
+REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada laboral → OPEX con category "Meals (work — fast food/coffee/snacks)". Restaurantes o bares → PERSONAL con category "Meals (restaurant/bar)". En los campos "detail_en" y "detail_es" de cualquier transacción de comida, especifica (en cada idioma respectivamente) si el comercio es un restaurante/bar o un supermercado/tienda, y el nombre del comercio si aparece.
 
-REGLA DE TRANSFERENCIAS PERSONALES (importante): toda transferencia electrónica ("Online Transfer", "Electronic Withdrawal", transferencia a otra cuenta propia, etc.) sin justificación de negocio clara → PERSONAL con category "Personal bank transfer". En el campo "detail" indica el destino/origen tal como aparece en el extracto (nombre del beneficiario, banco/cuenta destino, o "transferencia a cuenta propia") — esto es indispensable para poder rastrear cada transferencia individualmente, ninguna puede quedar sin ese detalle.
+REGLA DE TRANSFERENCIAS PERSONALES (importante): toda transferencia electrónica ("Online Transfer", "Electronic Withdrawal", transferencia a otra cuenta propia, etc.) sin justificación de negocio clara → PERSONAL con category "Personal bank transfer". En los campos "detail_en" y "detail_es" indica el destino/origen tal como aparece en el extracto (nombre del beneficiario, banco/cuenta destino, o "transfer to own account"/"transferencia a cuenta propia") — esto es indispensable para poder rastrear cada transferencia individualmente, ninguna puede quedar sin ese detalle.
 
 Si algo no está claro, clasifícalo de todas formas en la categoría más probable (sin agregar una alerta individual por eso — las alertas se generan aparte, en el Paso 5, solo para patrones que de verdad importan).
 
@@ -89,22 +88,22 @@ IMPORTANTE — NO OMITAS NINGUNA TRANSACCIÓN: procesa absolutamente todas las l
 
 PASO 3 — Genera un resumen mensual (annualSummary): un registro por cada mes presente en el extracto, con ingresos, gastos y neto de ese mes. Si el extracto cubre un solo mes, igual genera esa única entrada.
 
-PASO 4 — Genera "insights": 3 a 4 observaciones breves y accionables sobre la salud financiera del negocio (ej. margen bruto, categoría de mayor gasto, tendencia).
+PASO 4 — Genera "insights_en" e "insights_es": 3 a 4 observaciones breves y accionables sobre la salud financiera del negocio (ej. margen bruto, categoría de mayor gasto, tendencia). Ambos arreglos deben decir exactamente lo mismo, uno en inglés y otro en español.
 
-PASO 5 — Genera "alerts": MÁXIMO 5 alertas en total, priorizando solo lo que de verdad importa para el negocio o para impuestos:
+PASO 5 — Genera "alerts_en" y "alerts_es": MÁXIMO 5 alertas en total, priorizando solo lo que de verdad importa para el negocio o para impuestos (ambos arreglos con el mismo contenido, uno por idioma):
   - Montos individuales grandes (>$500) sin descripción de negocio clara.
   - Patrones repetidos (ej. "múltiples pagos Zelle a individuos sin descripción de negocio, total $X" — UNA sola alerta agrupando todos esos casos, no una por transacción).
   - Posibles pagos duplicados.
   - Gastos personales grandes mezclados con la cuenta de negocio.
-  No generes una alerta por cada transacción ambigua individual — agrupa. No agregues alertas para transacciones pequeñas, rutinarias o ya bien identificadas. Si de verdad no hay nada que reportar, incluye una sola nota breve indicando que todo está en orden (no la mezcles con las alertas de riesgo).
+  No generes una alerta por cada transacción ambigua individual — agrupa. No agregues alertas para transacciones pequeñas, rutinarias o ya bien identificadas. Si de verdad no hay nada que reportar, incluye una sola nota breve (en ambos idiomas) indicando que todo está en orden (no la mezcles con las alertas de riesgo).
 
 PASO 6 — Genera "thirdPartyPayments": UNA entrada por cada CHEQUE EMITIDO y por cada pago por ZELLE — tanto SALIENTE (el negocio paga) como ENTRANTE (un cliente le paga al negocio) — que ya hayas clasificado en el Paso 2, sin importar si quedó en REVENUES, COGS, OPEX o PERSONAL. Esto es indispensable para que el negocio sepa a quién debe reportarle un formulario 1099 al final del año, y para que ningún Zelle quede sin rastrear.
   - Para cheques emitidos: "method"="Check", "direction"="outgoing", "identifier"=el número de cheque exacto tal como aparece en el extracto (ej. "1787"). Si el extracto muestra el nombre del beneficiario del cheque, ponlo en "payee"; si no aparece (es común), deja "payee" como cadena vacía "". No generes entradas de tipo Check para cheques recibidos/depositados (esos van solo en revenues).
   - Para Zelle saliente: "method"="Zelle", "direction"="outgoing", "identifier"=nombre del destinatario tal como aparece, "payee"="".
   - Para Zelle entrante (ya clasificado en revenues con category "Zelle"): "method"="Zelle", "direction"="incoming", "identifier"=nombre del remitente/pagador tal como aparece, "payee"="".
   - Incluye "date", "amt" (positivo) y "category" (la misma categoría exacta que le asignaste a esa transacción en el Paso 2).
-  - "classification": etiqueta muy breve (máx. 4-5 palabras, en el idioma de salida) sobre la relevancia de ese pago para reportes 1099 (ej. "Posible 1099 — subcontratista", "Pago de cliente", "Pago a familiar", "Reembolso").
-  - "alert": cadena vacía "" salvo que ese pago puntual amerite una advertencia individual (ej. "Monto inusualmente alto para este beneficiario").
+  - "classification_en" y "classification_es": etiqueta muy breve (máx. 4-5 palabras, mismo contenido en ambos idiomas) sobre la relevancia de ese pago para reportes 1099 (ej. "Possible 1099 — subcontractor" / "Posible 1099 — subcontratista", "Client payment" / "Pago de cliente", "Payment to family" / "Pago a familiar", "Reimbursement" / "Reembolso").
+  - "alert_en" y "alert_es": cadena vacía "" en ambos salvo que ese pago puntual amerite una advertencia individual (ej. "Unusually high amount for this payee" / "Monto inusualmente alto para este beneficiario").
   - Si el mismo número de cheque o la misma persona recibe/envía varios pagos, lista cada uno por separado (no los sumes en una sola entrada).
 
 PASO 7 — Busca en el extracto un recuadro de resumen impreso por el propio banco (ej. "Checking Summary", "Account Summary") con Saldo inicial, Depósitos y adiciones, Cheques pagados, Retiros con tarjeta/ATM, Retiros electrónicos y Saldo final — casi siempre con instancias y monto de cada uno. Genera "bankSummary" copiando esos valores TAL COMO los imprime el banco — NUNCA los calcules ni los infieras sumando las transacciones que ya clasificaste, es una verificación cruzada independiente para detectar transacciones que se te hayan escapado.
@@ -118,7 +117,7 @@ REGLAS OBLIGATORIAS:
 - Usa montos siempre positivos (sin signo negativo) en el campo "amt".
 - El campo "date" usa el formato del extracto tal cual aparece (o vacío si no es legible).
 - El campo "category" debe ser EXACTAMENTE una de las etiquetas listadas arriba para esa sección — esto es crítico para que los subtotales anuales por categoría sean consistentes entre meses.
-- El campo "detail" es OPCIONAL y debe ser muy breve (máx. 6 palabras, ej. nombre del comercio). Si no aporta nada útil, déjalo como cadena vacía "" — no rellenes con texto innecesario.
+- Los campos "detail_en" y "detail_es" son OPCIONALES y deben ser muy breves (máx. 6 palabras, ej. nombre del comercio). Si no aportan nada útil, déjalos como cadena vacía "" en ambos — no rellenes con texto innecesario.
 - "period" es el rango de fechas del extracto tal como aparece (ej. "Enero 2026" o "01/01/2026 - 01/31/2026").
 - "company" es el nombre del titular de la cuenta o negocio si aparece en el extracto; si no aparece, usa cadena vacía.`;
 };
@@ -128,7 +127,8 @@ interface LineItem {
   desc: string;
   amt: number;
   category: string;
-  detail: string;
+  detail_en: string;
+  detail_es: string;
 }
 
 const lineItemSchema = {
@@ -138,9 +138,10 @@ const lineItemSchema = {
     desc: { type: "string" },
     amt: { type: "number" },
     category: { type: "string" },
-    detail: { type: "string" },
+    detail_en: { type: "string" },
+    detail_es: { type: "string" },
   },
-  required: ["date", "desc", "amt", "category", "detail"],
+  required: ["date", "desc", "amt", "category", "detail_en", "detail_es"],
   additionalProperties: false,
 };
 
@@ -166,12 +167,14 @@ const thirdPartyPaymentSchema = {
     date: { type: "string" },
     amt: { type: "number" },
     category: { type: "string" },
-    classification: { type: "string" },
-    alert: { type: "string" },
+    classification_en: { type: "string" },
+    classification_es: { type: "string" },
+    alert_en: { type: "string" },
+    alert_es: { type: "string" },
   },
   required: [
     "method", "direction", "identifier", "payee", "date",
-    "amt", "category", "classification", "alert",
+    "amt", "category", "classification_en", "classification_es", "alert_en", "alert_es",
   ],
   additionalProperties: false,
 };
@@ -219,14 +222,16 @@ const RESULT_SCHEMA = {
     personal: { type: "array", items: lineItemSchema },
     thirdPartyPayments: { type: "array", items: thirdPartyPaymentSchema },
     bankSummary: bankSummarySchema,
-    insights: { type: "array", items: { type: "string" } },
-    alerts: { type: "array", items: { type: "string" } },
+    insights_en: { type: "array", items: { type: "string" } },
+    insights_es: { type: "array", items: { type: "string" } },
+    alerts_en: { type: "array", items: { type: "string" } },
+    alerts_es: { type: "array", items: { type: "string" } },
     annualSummary: { type: "array", items: monthSchema },
   },
   required: [
     "company", "period", "industry", "annualYear",
     "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments", "bankSummary",
-    "insights", "alerts", "annualSummary",
+    "insights_en", "insights_es", "alerts_en", "alerts_es", "annualSummary",
   ],
   additionalProperties: false,
 };
@@ -253,8 +258,7 @@ serve(async (req) => {
   }
 
   try {
-    const { fileBase64, mediaType, fileName, lang } = await req.json();
-    const outputLang = lang === "en" ? "en" : "es";
+    const { fileBase64, mediaType, fileName } = await req.json();
 
     if (!fileBase64 || typeof fileBase64 !== "string") {
       return new Response(JSON.stringify({ error: "Falta el archivo (fileBase64)." }), {
@@ -305,9 +309,9 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-5",
-        max_tokens: 24000,
+        max_tokens: 32000,
         system: [
-          { type: "text", text: buildSystemPrompt(outputLang), cache_control: { type: "ephemeral" } },
+          { type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } },
         ],
         thinking: { type: "disabled" },
         output_config: {

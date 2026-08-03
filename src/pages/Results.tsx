@@ -25,7 +25,7 @@ import {
   type BankSummary,
   type ReconciliationResult,
 } from "@/utils/reportTypes";
-import { STR, tr, translateCategory } from "@/utils/i18n";
+import { STR, tr, translateCategory, pickText, pickArray } from "@/utils/i18n";
 
 interface LineItem {
   name: string;
@@ -72,7 +72,7 @@ interface ResultsData {
   reconciliation?: ReconciliationResult;
 }
 
-const normalizeThirdParty = (items: any[] = []): ThirdPartyPayment[] =>
+const normalizeThirdParty = (items: any[] = [], isEnglish = true): ThirdPartyPayment[] =>
   (Array.isArray(items) ? items : []).map((p) => ({
     method: String(p?.method || ""),
     direction: p?.direction === "incoming" ? "incoming" : "outgoing",
@@ -81,8 +81,8 @@ const normalizeThirdParty = (items: any[] = []): ThirdPartyPayment[] =>
     date: p?.date ? String(p.date) : "",
     amt: toNumber(p?.amt ?? p?.amount),
     category: p?.category ? String(p.category) : "",
-    classification: p?.classification ? String(p.classification) : "",
-    alert: p?.alert ? String(p.alert) : "",
+    classification: pickText(p, "classification", isEnglish),
+    alert: pickText(p, "alert", isEnglish),
   }));
 
 const buildThirdPartyBuckets = (thirdParty: ThirdPartyPayment[], personalTransfers: LineItem[]): ThirdPartyBuckets => ({
@@ -234,7 +234,7 @@ const sumAnalysisItems = (items: any[] = []) =>
 const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number, isEnglish = true): LineItem[] =>
   items.map((item) => {
     const amount = toNumber(item?.amt ?? item?.amount);
-    const detailParts = [item?.date, item?.detail].filter(Boolean);
+    const detailParts = [item?.date, pickText(item, "detail", isEnglish)].filter(Boolean);
 
     return {
       name: item?.desc || item?.name || "Unknown",
@@ -315,9 +315,10 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
     const ebitda = grossProfit - totalOpex - totalFood;
     const netIncome = ebitda - totalPersonal;
 
-    const insights = Array.isArray(source?.insights) ? source.insights : [];
+    const insights = pickArray(source, "insights", isEnglish);
+    const alertsArr = pickArray(source, "alerts", isEnglish);
 
-    const thirdPartyPayments = normalizeThirdParty(source?.thirdPartyPayments);
+    const thirdPartyPayments = normalizeThirdParty(source?.thirdPartyPayments, isEnglish);
     const personalTransfers = normalizeAnalysisItems(
       personal.filter((item: any) => item?.category === PERSONAL_TRANSFER_CATEGORY),
       totalRevenue,
@@ -460,7 +461,7 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
           color: sectionColors[3],
         },
       ],
-      redFlags: [...reconciliation.discrepancies, ...(source.alerts || source.redFlags || source.red_flags || [])],
+      redFlags: [...reconciliation.discrepancies, ...(alertsArr.length ? alertsArr : (source.redFlags || source.red_flags || []))],
       thirdPartyPayments,
       thirdPartyBuckets,
       bankSummary,

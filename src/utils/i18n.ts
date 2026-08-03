@@ -74,6 +74,23 @@ type Bilingual = { en: string; es: string };
 /** Picks the string for the requested language. */
 export const tr = (s: Bilingual, isEnglish: boolean): string => (isEnglish ? s.en : s.es);
 
+/** Reads a free-text field the AI wrote in both languages (e.g. "detail_en"/"detail_es") and picks
+ * the one matching the requested language. Falls back to the old single-language field name (e.g.
+ * "detail") for analyses stored before the AI started producing both variants, so historical data
+ * still renders instead of going blank. */
+export const pickText = (item: any, baseKey: string, isEnglish: boolean): string => {
+  const bilingual = item?.[`${baseKey}_${isEnglish ? "en" : "es"}`];
+  if (typeof bilingual === "string") return bilingual;
+  return typeof item?.[baseKey] === "string" ? item[baseKey] : "";
+};
+
+/** Same idea as {@link pickText} but for array fields (e.g. "insights_en"/"insights_es"). */
+export const pickArray = (source: any, baseKey: string, isEnglish: boolean): string[] => {
+  const bilingual = source?.[`${baseKey}_${isEnglish ? "en" : "es"}`];
+  if (Array.isArray(bilingual)) return bilingual;
+  return Array.isArray(source?.[baseKey]) ? source[baseKey] : [];
+};
+
 export const STR = {
   // Report/section titles
   revenue: { en: "Revenue", es: "Ingresos" },
