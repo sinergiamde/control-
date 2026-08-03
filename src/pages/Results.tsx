@@ -25,6 +25,7 @@ import {
   type BankSummary,
   type ReconciliationResult,
 } from "@/utils/reportTypes";
+import { STR, tr, translateCategory } from "@/utils/i18n";
 
 interface LineItem {
   name: string;
@@ -230,7 +231,7 @@ const toPercent = (value: number, total: number) => (total > 0 ? (value / total)
 const sumAnalysisItems = (items: any[] = []) =>
   items.reduce((sum, item) => sum + toNumber(item?.amt ?? item?.amount), 0);
 
-const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number): LineItem[] =>
+const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number, isEnglish = true): LineItem[] =>
   items.map((item) => {
     const amount = toNumber(item?.amt ?? item?.amount);
     const detailParts = [item?.date, item?.detail].filter(Boolean);
@@ -240,7 +241,7 @@ const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number): LineIt
       amount,
       percentage: toPercent(amount, totalRevenue),
       detail: detailParts.length > 0 ? detailParts.join(" • ") : undefined,
-      category: item?.category ? String(item.category) : undefined,
+      category: item?.category ? translateCategory(String(item.category), isEnglish) : undefined,
     };
   });
 
@@ -249,7 +250,7 @@ const formatCurrencyText = (value: number) =>
 
 const formatPercentText = (value: number, total: number) => `${toPercent(value, total).toFixed(1)}%`;
 
-const transformAPIResponse = (raw: any): ResultsData => {
+const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
   const source = raw?.analysis ?? raw;
 
   if (source?.sections && Array.isArray(source.sections)) {
@@ -319,10 +320,11 @@ const transformAPIResponse = (raw: any): ResultsData => {
     const thirdPartyPayments = normalizeThirdParty(source?.thirdPartyPayments);
     const personalTransfers = normalizeAnalysisItems(
       personal.filter((item: any) => item?.category === PERSONAL_TRANSFER_CATEGORY),
-      totalRevenue
+      totalRevenue,
+      isEnglish
     );
     const bankSummary = normalizeBankSummary(source?.bankSummary);
-    const reconciliation = reconcileStatement(source);
+    const reconciliation = reconcileStatement(source, isEnglish);
     const thirdPartyBuckets = buildThirdPartyBuckets(thirdPartyPayments, personalTransfers);
 
     // Checks/Zelle/transfers already get their own itemized breakdown in the Third Party Payments
@@ -333,30 +335,30 @@ const transformAPIResponse = (raw: any): ResultsData => {
       (item: any) => !(PERSONAL_THIRD_PARTY_CATEGORIES as readonly string[]).includes(item?.category)
     );
     const movedPersonalTotal = sumAnalysisItems(personal) - sumAnalysisItems(personalDisplayItems);
-    const personalSectionItems = normalizeAnalysisItems(personalDisplayItems, totalRevenue);
+    const personalSectionItems = normalizeAnalysisItems(personalDisplayItems, totalRevenue, isEnglish);
     if (movedPersonalTotal > 0) {
       personalSectionItems.push({
-        name: "Personal transfers & Zelle to family (see Third Party Payments tab)",
+        name: tr(STR.movedPersonalName, isEnglish),
         amount: movedPersonalTotal,
         percentage: toPercent(movedPersonalTotal, totalRevenue),
-        detail: "Included in Total Personal above — itemized separately for 1099 tracking",
+        detail: tr(STR.movedPersonalDetail, isEnglish),
       });
     }
 
     const thirdPartyLineItems: LineItem[] = [
       ...thirdPartyBuckets.checks.map((p) => ({
-        name: `Check #${p.identifier || "?"} — ${p.payee || "Payee not shown"}`,
+        name: `${tr(STR.checkPrefix, isEnglish)}${p.identifier || "?"} — ${p.payee || tr(STR.payeeNotShown, isEnglish)}`,
         amount: p.amt,
         percentage: toPercent(p.amt, totalRevenue),
         detail: [p.date, p.classification].filter(Boolean).join(" • "),
-        category: p.category,
+        category: translateCategory(p.category, isEnglish),
       })),
       ...[...thirdPartyBuckets.zelleOutgoing, ...thirdPartyBuckets.zelleIncoming].map((p) => ({
-        name: `Zelle ${p.direction === "incoming" ? "from" : "to"} ${p.identifier || "Unknown"}`,
+        name: `Zelle ${p.direction === "incoming" ? tr(STR.zelleFrom, isEnglish) : tr(STR.zelleTo, isEnglish)} ${p.identifier || "Unknown"}`,
         amount: p.amt,
         percentage: toPercent(p.amt, totalRevenue),
         detail: [p.date, p.classification, p.alert].filter(Boolean).join(" • "),
-        category: p.category,
+        category: translateCategory(p.category, isEnglish),
       })),
       ...thirdPartyBuckets.personalTransfers,
     ];
@@ -364,57 +366,57 @@ const transformAPIResponse = (raw: any): ResultsData => {
 
     const allSections: Section[] = [
       {
-        title: "Revenue",
+        title: tr(STR.revenue, isEnglish),
         kind: "revenue",
         icon: DollarSign,
-        items: normalizeAnalysisItems(revenues, totalRevenue),
+        items: normalizeAnalysisItems(revenues, totalRevenue, isEnglish),
         total: totalRevenue,
-        totalLabel: "Total Revenue",
+        totalLabel: tr(STR.totalRevenue, isEnglish),
         color: sectionColors[0],
       },
       {
         title: "COGS",
         kind: "cogs",
         icon: Building2,
-        items: normalizeAnalysisItems(cogs, totalRevenue),
+        items: normalizeAnalysisItems(cogs, totalRevenue, isEnglish),
         total: totalCOGS,
-        totalLabel: "Total COGS",
+        totalLabel: tr(STR.totalCOGS, isEnglish),
         color: sectionColors[1],
       },
       {
-        title: "Operating Expenses & Fees",
+        title: tr(STR.operatingExpensesFees, isEnglish),
         kind: "opex",
         icon: CreditCard,
-        items: normalizeAnalysisItems(operatingExpenses, totalRevenue),
+        items: normalizeAnalysisItems(operatingExpenses, totalRevenue, isEnglish),
         total: totalOpex,
-        totalLabel: "Total OpEx",
+        totalLabel: tr(STR.totalOpex, isEnglish),
         color: sectionColors[2],
       },
       {
-        title: "Food / Alimentación (Work Meals)",
+        title: tr(STR.foodFull, isEnglish),
         kind: "food",
         icon: UtensilsCrossed,
-        items: normalizeAnalysisItems(foodItems, totalRevenue),
+        items: normalizeAnalysisItems(foodItems, totalRevenue, isEnglish),
         total: totalFood,
-        totalLabel: "Total Alimentación",
+        totalLabel: tr(STR.totalFood, isEnglish),
         color: sectionColors[4],
       },
       {
-        title: "Other Expenses/Possible Deductions",
+        title: tr(STR.otherExpensesDeductions, isEnglish),
         kind: "personal",
         icon: ShoppingBag,
         items: personalSectionItems,
         total: totalPersonal,
-        totalLabel: "Total Personal",
+        totalLabel: tr(STR.totalPersonal, isEnglish),
         color: sectionColors[3],
       },
       {
-        title: "Third Party Payments",
+        title: tr(STR.thirdPartyPayments, isEnglish),
         kind: "thirdParty",
         icon: Users,
         items: thirdPartyLineItems,
         total: totalThirdParty,
-        totalLabel: "Total Third Party Payments",
+        totalLabel: tr(STR.totalThirdParty, isEnglish),
         color: sectionColors[5],
       },
     ];
@@ -434,27 +436,27 @@ const transformAPIResponse = (raw: any): ResultsData => {
       sections,
       kpis: [
         {
-          label: "Revenue",
+          label: tr(STR.revenue, isEnglish),
           value: formatCurrencyText(totalRevenue),
-          description: insights[0] || "Total revenue detected from the uploaded statement.",
+          description: insights[0] || tr(STR.revenueKpiDesc, isEnglish),
           color: sectionColors[0],
         },
         {
-          label: "Gross Margin",
+          label: tr(STR.grossMargin, isEnglish),
           value: formatPercentText(grossProfit, totalRevenue),
-          description: insights[1] || "Gross profit as a percentage of revenue.",
+          description: insights[1] || tr(STR.grossMarginDesc, isEnglish),
           color: sectionColors[1],
         },
         {
-          label: "EBITDA Margin",
+          label: tr(STR.ebitdaMargin, isEnglish),
           value: formatPercentText(ebitda, totalRevenue),
-          description: insights[2] || "Operating profitability after expenses and fees.",
+          description: insights[2] || tr(STR.ebitdaMarginDesc, isEnglish),
           color: sectionColors[2],
         },
         {
-          label: "Net Margin",
+          label: tr(STR.netMargin, isEnglish),
           value: formatPercentText(netIncome, totalRevenue),
-          description: insights[3] || "Net income after personal or non-deductible expenses.",
+          description: insights[3] || tr(STR.netMarginDesc, isEnglish),
           color: sectionColors[3],
         },
       ],
@@ -486,11 +488,11 @@ const transformAPIResponse = (raw: any): ResultsData => {
     totalPersonal: 0,
     netIncome: 0,
     sections: [{
-      title: "Expense Breakdown",
+      title: tr({ en: "Expense Breakdown", es: "Desglose de Gastos" }, isEnglish),
       icon: Receipt,
       color: sectionColors[0],
       total: totalSpent,
-      totalLabel: "Total",
+      totalLabel: tr(STR.total, isEnglish),
       items,
     }],
     kpis: [],
@@ -499,7 +501,8 @@ const transformAPIResponse = (raw: any): ResultsData => {
 };
 
 const Results = () => {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const isEnglish = lang === "en";
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -519,9 +522,9 @@ const Results = () => {
           <Card className="neon-border bg-card max-w-md w-full">
             <CardContent className="p-8 text-center">
               <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
-              <h2 className="text-xl font-bold text-foreground mb-2">No data to display</h2>
+              <h2 className="text-xl font-bold text-foreground mb-2">{tr(STR.noDataTitle, isEnglish)}</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                Upload a document from the Dashboard to generate your P&L report.
+                {tr(STR.noDataDesc, isEnglish)}
               </p>
               <Button onClick={() => navigate("/dashboard")} className="neon-glow">
                 <ArrowLeft className="h-4 w-4 mr-2" />
@@ -534,22 +537,22 @@ const Results = () => {
     );
   }
 
-  const results: ResultsData = transformAPIResponse(rawResults);
+  const results: ResultsData = transformAPIResponse(rawResults, isEnglish);
 
   const handleDownloadExcel = () => {
-    generateProfessionalExcel(results);
+    generateProfessionalExcel(results, isEnglish);
   };
 
   const handleDownloadPDF = () => {
-    generateProfessionalPDF(results);
+    generateProfessionalPDF(results, isEnglish);
   };
 
   const summaryCards = [
-    { label: "Total Income", value: results.totalRevenue, icon: DollarSign, color: "hsl(96, 100%, 50%)", sub: "100%" },
+    { label: tr(STR.totalIncome, isEnglish), value: results.totalRevenue, icon: DollarSign, color: "hsl(96, 100%, 50%)", sub: "100%" },
     { label: "COGS", value: results.totalCOGS, icon: Building2, color: "hsl(38, 90%, 55%)", sub: `${((results.totalCOGS / results.totalRevenue) * 100).toFixed(1)}%` },
-    { label: "Gross Profit", value: results.grossProfit, icon: TrendingUp, color: "hsl(96, 100%, 50%)", sub: `${((results.grossProfit / results.totalRevenue) * 100).toFixed(1)}%` },
+    { label: tr(STR.grossProfitShort, isEnglish), value: results.grossProfit, icon: TrendingUp, color: "hsl(96, 100%, 50%)", sub: `${((results.grossProfit / results.totalRevenue) * 100).toFixed(1)}%` },
     { label: "EBITDA", value: results.ebitda, icon: BarChart3, color: "hsl(210, 60%, 50%)", sub: `${((results.ebitda / results.totalRevenue) * 100).toFixed(1)}%` },
-    { label: "Net Income", value: results.netIncome, icon: Wallet, color: "hsl(142, 76%, 36%)", sub: `${((results.netIncome / results.totalRevenue) * 100).toFixed(1)}%` },
+    { label: tr(STR.netIncomeShort, isEnglish), value: results.netIncome, icon: Wallet, color: "hsl(142, 76%, 36%)", sub: `${((results.netIncome / results.totalRevenue) * 100).toFixed(1)}%` },
   ];
 
   return (
@@ -559,7 +562,7 @@ const Results = () => {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 opacity-0 animate-fade-in">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
-              Profit & Loss
+              {tr(STR.profitLoss, isEnglish)}
             </h1>
             {results.companyName && (
               <p className="text-primary text-sm font-medium mt-1 neon-text">{results.companyName}</p>
@@ -604,8 +607,8 @@ const Results = () => {
             )}
             <span>
               {results.reconciliation.ok
-                ? "Reconciled — the classified totals match the bank's own printed summary."
-                : `${results.reconciliation.discrepancies.length} discrepancy(ies) detected against the bank summary — review Alerts & Red Flags.`}
+                ? tr(STR.reconciledBanner, isEnglish)
+                : `${results.reconciliation.discrepancies.length} ${tr(STR.discrepancyBanner, isEnglish)}`}
             </span>
           </div>
         )}
@@ -634,19 +637,19 @@ const Results = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-foreground flex items-center gap-2 text-base">
               <PieChart className="h-5 w-5 text-primary" />
-              Financial Flow
+              {tr(STR.financialFlow, isEnglish)}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {[
-                { label: "Revenue", value: results.totalRevenue, pct: 100, color: "hsl(96, 100%, 50%)" },
+                { label: tr(STR.revenue, isEnglish), value: results.totalRevenue, pct: 100, color: "hsl(96, 100%, 50%)" },
                 { label: "COGS", value: results.totalCOGS, pct: (results.totalCOGS / results.totalRevenue) * 100, color: "hsl(38, 90%, 55%)" },
-                { label: "Gross Profit", value: results.grossProfit, pct: (results.grossProfit / results.totalRevenue) * 100, color: "hsl(96, 100%, 50%)" },
+                { label: tr(STR.grossProfitShort, isEnglish), value: results.grossProfit, pct: (results.grossProfit / results.totalRevenue) * 100, color: "hsl(96, 100%, 50%)" },
                 { label: "OpEx", value: results.totalOpex, pct: (results.totalOpex / results.totalRevenue) * 100, color: "hsl(210, 60%, 50%)" },
                 { label: "EBITDA", value: results.ebitda, pct: (results.ebitda / results.totalRevenue) * 100, color: "hsl(142, 76%, 36%)" },
                 { label: "Personal", value: results.totalPersonal, pct: (results.totalPersonal / results.totalRevenue) * 100, color: "hsl(0, 70%, 55%)" },
-                { label: "Net Income", value: results.netIncome, pct: (results.netIncome / results.totalRevenue) * 100, color: "hsl(142, 76%, 36%)" },
+                { label: tr(STR.netIncomeShort, isEnglish), value: results.netIncome, pct: (results.netIncome / results.totalRevenue) * 100, color: "hsl(142, 76%, 36%)" },
               ].map((item, i) => (
                 <div key={item.label} className="group">
                   <div className="flex items-center justify-between text-sm mb-1">
@@ -676,7 +679,7 @@ const Results = () => {
 
         <div className="space-y-3 mb-8">
           <h2 className="text-lg font-bold text-foreground mb-4 opacity-0 animate-fade-in" style={{ animationDelay: "0.5s" }}>
-            Detailed Breakdown
+            {tr(STR.detailedBreakdown, isEnglish)}
           </h2>
           {results.sections.map((section, i) => (
             <CollapsibleSection key={section.title} section={section} index={i} />
@@ -687,7 +690,7 @@ const Results = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-foreground flex items-center gap-2 text-base">
               <Target className="h-5 w-5 text-primary" />
-              Key Indicators (KPIs)
+              {tr(STR.keyIndicatorsHeading, isEnglish)}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -711,7 +714,7 @@ const Results = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-destructive flex items-center gap-2 text-base">
                 <AlertTriangle className="h-5 w-5" />
-                Alerts & Red Flags
+                {tr(STR.alertsRedFlags, isEnglish)}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -732,7 +735,7 @@ const Results = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-primary" />
-                Annual Summary {(results as any).annualYear || ""}
+                {tr(STR.annualSummaryHeading, isEnglish)} {(results as any).annualYear || ""}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -740,10 +743,10 @@ const Results = () => {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-muted-foreground border-b border-border">
-                      <th className="py-2 pr-4 font-medium">Month</th>
-                      <th className="py-2 pr-4 font-medium text-right">Income</th>
-                      <th className="py-2 pr-4 font-medium text-right">Expenses</th>
-                      <th className="py-2 font-medium text-right">Net</th>
+                      <th className="py-2 pr-4 font-medium">{tr(STR.month, isEnglish)}</th>
+                      <th className="py-2 pr-4 font-medium text-right">{tr(STR.income, isEnglish)}</th>
+                      <th className="py-2 pr-4 font-medium text-right">{tr(STR.expenses, isEnglish)}</th>
+                      <th className="py-2 font-medium text-right">{tr(STR.net, isEnglish)}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -757,7 +760,7 @@ const Results = () => {
                     ))}
                     {(results as any).annualTotals && (
                       <tr className="font-semibold">
-                        <td className="py-2 pr-4">Total</td>
+                        <td className="py-2 pr-4">{tr(STR.total, isEnglish)}</td>
                         <td className="py-2 pr-4 text-right">${Number((results as any).annualTotals.revenue || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}</td>
                         <td className="py-2 pr-4 text-right">${Number((results as any).annualTotals.expenses || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}</td>
                         <td className={`py-2 text-right ${Number((results as any).annualTotals.net || 0) >= 0 ? "text-primary" : "text-destructive"}`}>${Number((results as any).annualTotals.net || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}</td>
@@ -771,7 +774,7 @@ const Results = () => {
         )}
 
         <p className="text-xs text-muted-foreground text-center pb-8 opacity-0 animate-fade-in" style={{ animationDelay: "1s" }}>
-          P&L based on bank transactions — does not include pending A/R or A/P. Prepare formal financial statements with a CPA for IRS purposes.
+          {tr(STR.footerDisclaimer, isEnglish)}
         </p>
       </div>
       <ChatBot />

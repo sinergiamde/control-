@@ -1,5 +1,6 @@
 import { reconcileStatement } from "./reconciliation";
 import { FOOD_OPEX_CATEGORY, PERSONAL_TRANSFER_CATEGORY, PERSONAL_THIRD_PARTY_CATEGORIES, type LineItem, type ThirdPartyPayment } from "./reportTypes";
+import { STR, tr, translateCategory } from "./i18n";
 
 const toNumber = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) return Math.abs(value);
@@ -13,9 +14,10 @@ const toNumber = (value: unknown) => {
 
 const getAnalysisSource = (data: any) => data?.analysis ?? data;
 
-const addToCategoryMap = (map: Record<string, number>, items: any[] = []) => {
+const addToCategoryMap = (map: Record<string, number>, items: any[] = [], isEnglish: boolean) => {
   for (const item of items) {
-    const name = String(item?.category || item?.desc || item?.name || "Other").trim() || "Other";
+    const rawName = String(item?.category || item?.desc || item?.name || "Other").trim() || "Other";
+    const name = item?.category ? translateCategory(rawName, isEnglish) : rawName;
     map[name] = (map[name] || 0) + toNumber(item?.amt ?? item?.amount);
   }
 };
@@ -50,21 +52,21 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
     const src = getAnalysisSource(data);
     const period = src?.period ? String(src.period) : "";
 
-    addToCategoryMap(revenueMap, src?.revenues);
-    addToCategoryMap(cogsMap, src?.cogs);
+    addToCategoryMap(revenueMap, src?.revenues, isEnglish);
+    addToCategoryMap(cogsMap, src?.cogs, isEnglish);
 
     const rawOpex = Array.isArray(src?.opex) ? src.opex : [];
     const foodItems = rawOpex.filter((item: any) => item?.category === FOOD_OPEX_CATEGORY);
     const opexWithoutFood = rawOpex.filter((item: any) => item?.category !== FOOD_OPEX_CATEGORY);
-    addToCategoryMap(opexMap, [...opexWithoutFood, ...(src?.fees || [])]);
-    addToCategoryMap(foodMap, foodItems);
+    addToCategoryMap(opexMap, [...opexWithoutFood, ...(src?.fees || [])], isEnglish);
+    addToCategoryMap(foodMap, foodItems, isEnglish);
 
     // Checks/Zelle/transfers get their own itemized breakdown in the Third Party Payments sheet —
     // exclude them here so the same transaction isn't listed twice in GASTOS PERSONALES. totalPersonal
     // stays correct: the moved amount is rolled back in as a single reference line below.
     const allPersonal = Array.isArray(src?.personal) ? src.personal : [];
     const isThirdPartyCategory = (item: any) => (PERSONAL_THIRD_PARTY_CATEGORIES as readonly string[]).includes(item?.category);
-    addToCategoryMap(personalMap, allPersonal.filter((item: any) => !isThirdPartyCategory(item)));
+    addToCategoryMap(personalMap, allPersonal.filter((item: any) => !isThirdPartyCategory(item)), isEnglish);
     movedPersonalTotal += allPersonal
       .filter(isThirdPartyCategory)
       .reduce((sum: number, item: any) => sum + toNumber(item?.amt ?? item?.amount), 0);
@@ -81,7 +83,7 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
           payee: p?.payee ? String(p.payee) : "",
           date: p?.date ? String(p.date) : "",
           amt: toNumber(p?.amt ?? p?.amount),
-          category: p?.category ? String(p.category) : "",
+          category: p?.category ? translateCategory(String(p.category), isEnglish) : "",
           classification: p?.classification ? String(p.classification) : "",
           alert: p?.alert ? String(p.alert) : "",
         });
@@ -97,21 +99,23 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
           name: item?.desc || item?.name || "Unknown",
           amount,
           detail: detailParts.length > 0 ? detailParts.join(" • ") : undefined,
-          category: item?.category ? String(item.category) : undefined,
+          category: item?.category ? translateCategory(String(item.category), isEnglish) : undefined,
         });
       });
 
-    const recon = reconcileStatement(src);
+    const recon = reconcileStatement(src, isEnglish);
     if (recon.bankSummaryFound) {
       statementsChecked++;
       if (recon.ok) statementsOk++;
-      else problemPeriods.push(period || "(sin período)");
+      else problemPeriods.push(period || (isEnglish ? "(no period)" : "(sin período)"));
     }
   }
 
   if (statementsChecked > 0 && statementsOk < statementsChecked) {
     alerts.unshift(
-      `⚠ ${statementsChecked - statementsOk} de ${statementsChecked} extracto(s) no concilian contra el resumen impreso por el banco: ${problemPeriods.join(", ")}. Revisa esos períodos individualmente.`
+      isEnglish
+        ? `⚠ ${statementsChecked - statementsOk} of ${statementsChecked} statement(s) do not reconcile against the bank's own printed summary: ${problemPeriods.join(", ")}. Review those periods individually.`
+        : `⚠ ${statementsChecked - statementsOk} de ${statementsChecked} extracto(s) no concilian contra el resumen impreso por el banco: ${problemPeriods.join(", ")}. Revisa esos períodos individualmente.`
     );
   }
 
@@ -137,9 +141,7 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
   const personalItems = mapToLineItems(personalMap, totalRevenue);
   if (movedPersonalTotal > 0) {
     personalItems.push({
-      name: isEnglish
-        ? "Personal transfers & Zelle to family (see Third Party Payments tab)"
-        : "Transferencias personales y Zelle a familiares (ver pestaña Pagos a Terceros)",
+      name: tr(STR.movedPersonalName, isEnglish),
       amount: movedPersonalTotal,
       percentage: totalRevenue > 0 ? (movedPersonalTotal / totalRevenue) * 100 : 0,
     });
@@ -157,16 +159,16 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
     totalPersonal,
     netIncome,
     sections: [
-      { title: isEnglish ? "Revenue" : "Ingresos", kind: "revenue" as const, items: mapToLineItems(revenueMap, totalRevenue), total: totalRevenue, totalLabel: isEnglish ? "Total Revenue" : "Total Ingresos" },
-      { title: "COGS", kind: "cogs" as const, items: mapToLineItems(cogsMap, totalRevenue), total: totalCOGS, totalLabel: "Total COGS" },
-      { title: isEnglish ? "Operating Expenses" : "Gastos Operativos (OpEx)", kind: "opex" as const, items: mapToLineItems(opexMap, totalRevenue), total: totalOpex, totalLabel: isEnglish ? "Total OpEx" : "Total OpEx" },
-      { title: isEnglish ? "Food (Work Meals)" : "Alimentación (Trabajo)", kind: "food" as const, items: mapToLineItems(foodMap, totalRevenue), total: totalFood, totalLabel: isEnglish ? "Total Food" : "Total Alimentación" },
-      { title: isEnglish ? "Other Expenses/Possible Deductions" : "Personal (No Deducible)", kind: "personal" as const, items: personalItems, total: totalPersonal, totalLabel: isEnglish ? "Total Personal" : "Total Personal" },
+      { title: tr(STR.revenue, isEnglish), kind: "revenue" as const, items: mapToLineItems(revenueMap, totalRevenue), total: totalRevenue, totalLabel: tr(STR.totalRevenue, isEnglish) },
+      { title: "COGS", kind: "cogs" as const, items: mapToLineItems(cogsMap, totalRevenue), total: totalCOGS, totalLabel: tr(STR.totalCOGS, isEnglish) },
+      { title: tr(STR.operatingExpenses, isEnglish), kind: "opex" as const, items: mapToLineItems(opexMap, totalRevenue), total: totalOpex, totalLabel: tr(STR.totalOpex, isEnglish) },
+      { title: tr(STR.foodFull, isEnglish), kind: "food" as const, items: mapToLineItems(foodMap, totalRevenue), total: totalFood, totalLabel: tr(STR.totalFood, isEnglish) },
+      { title: tr(STR.otherExpensesDeductions, isEnglish), kind: "personal" as const, items: personalItems, total: totalPersonal, totalLabel: tr(STR.totalPersonal, isEnglish) },
     ].filter((section) => section.items.length > 0 || section.total !== 0),
     kpis: [
-      { label: isEnglish ? "Gross Margin" : "Margen Bruto", value: pct(grossProfit), description: "" },
-      { label: "EBITDA Margin", value: pct(ebitda), description: "" },
-      { label: isEnglish ? "Net Margin" : "Margen Neto", value: pct(netIncome), description: "" },
+      { label: tr(STR.grossMargin, isEnglish), value: pct(grossProfit), description: "" },
+      { label: tr(STR.ebitdaMargin, isEnglish), value: pct(ebitda), description: "" },
+      { label: tr(STR.netMargin, isEnglish), value: pct(netIncome), description: "" },
     ],
     redFlags: alerts,
     thirdPartyPayments,

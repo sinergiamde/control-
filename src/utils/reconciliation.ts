@@ -33,12 +33,12 @@ export const totalBankWithdrawals = (bank: BankSummary): number | null => {
   return parts.reduce((sum, p) => sum + (p.amount as number), 0);
 };
 
-const buildField = (label: string, bankAmount: number | null, computedAmount: number): ReconciliationField => {
+const buildField = (id: string, label: string, bankAmount: number | null, computedAmount: number): ReconciliationField => {
   if (bankAmount === null) {
-    return { label, bankAmount: null, computedAmount, delta: null, ok: true };
+    return { id, label, bankAmount: null, computedAmount, delta: null, ok: true };
   }
   const delta = computedAmount - bankAmount;
-  return { label, bankAmount, computedAmount, delta, ok: Math.abs(delta) <= TOLERANCE };
+  return { id, label, bankAmount, computedAmount, delta, ok: Math.abs(delta) <= TOLERANCE };
 };
 
 /**
@@ -47,7 +47,7 @@ const buildField = (label: string, bankAmount: number | null, computedAmount: nu
  * transaction can't silently disappear from the report: if a check or transfer got missed,
  * the classified total won't match what the bank itself says it paid out.
  */
-export function reconcileStatement(source: any): ReconciliationResult {
+export function reconcileStatement(source: any, isEnglish = true): ReconciliationResult {
   const bank = normalizeBankSummary(source?.bankSummary);
 
   if (!bank.found) {
@@ -73,21 +73,30 @@ export function reconcileStatement(source: any): ReconciliationResult {
     ? bankWithdrawalParts.reduce((sum, p) => sum + (p.amount as number), 0)
     : null;
 
+  const depositsLabel = isEnglish ? "Deposits (Income)" : "Depósitos (Ingresos)";
+  const withdrawalsLabel = isEnglish ? "Total Withdrawals (COGS + OpEx + Personal)" : "Retiros totales (COGS + OpEx + Personal)";
+  const checksLabel = isEnglish ? "Checks Issued" : "Cheques Emitidos";
+  const endingBalanceLabel = isEnglish ? "Ending Balance (bank summary consistency)" : "Saldo final (consistencia del resumen del banco)";
+
   const fields: ReconciliationField[] = [
-    buildField("Depósitos (Ingresos)", bank.deposits.amount, computedDeposits),
-    buildField("Retiros totales (COGS + OpEx + Personal)", bankWithdrawalsTotal, computedOutflows),
-    buildField("Cheques Emitidos", bank.checksPaid.amount, computedChecks),
+    buildField("deposits", depositsLabel, bank.deposits.amount, computedDeposits),
+    buildField("withdrawals", withdrawalsLabel, bankWithdrawalsTotal, computedOutflows),
+    buildField("checksIssued", checksLabel, bank.checksPaid.amount, computedChecks),
   ];
 
   if (bank.beginningBalance !== null && bank.endingBalance !== null && bankWithdrawalsTotal !== null && bank.deposits.amount !== null) {
     const expectedEnding = bank.beginningBalance + bank.deposits.amount - bankWithdrawalsTotal;
-    fields.push(buildField("Saldo final (consistencia del resumen del banco)", bank.endingBalance, expectedEnding));
+    fields.push(buildField("endingBalance", endingBalanceLabel, bank.endingBalance, expectedEnding));
   }
 
   const discrepancies = fields
     .filter((f) => !f.ok)
     .map((f) => {
       const delta = f.delta ?? 0;
+      if (isEnglish) {
+        const sign = delta > 0 ? "too much" : "too little";
+        return `⚠ ${f.label}: the bank reports ${fmt(f.bankAmount ?? 0)} but ${fmt(f.computedAmount)} was classified (a difference of ${fmt(Math.abs(delta))} ${sign}) — review uncaptured or misclassified transactions.`;
+      }
       const sign = delta > 0 ? "de más" : "de menos";
       return `⚠ ${f.label}: el banco reporta ${fmt(f.bankAmount ?? 0)} pero se clasificaron ${fmt(f.computedAmount)} (diferencia ${fmt(Math.abs(delta))} ${sign}) — revisar transacciones no capturadas o mal clasificadas.`;
     });

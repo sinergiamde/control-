@@ -60,6 +60,10 @@ export interface BankSummary {
 }
 
 export interface ReconciliationField {
+  /** Stable, language-independent key for matching a specific field (e.g. "checksIssued") —
+   * use this instead of `label` when looking up a specific field, since `label` is a
+   * display string that changes with the selected report language. */
+  id: string;
   label: string;
   bankAmount: number | null;
   computedAmount: number;

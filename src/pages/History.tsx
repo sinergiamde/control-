@@ -14,6 +14,7 @@ import { buildConsolidatedReport } from "@/utils/consolidateReport";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
 import { normalizePeriod } from "@/utils/normalizePeriod";
+import { STR, tr, translateCategory } from "@/utils/i18n";
 
 interface AnalysisRow {
   id: string;
@@ -44,35 +45,35 @@ const toNumber = (value: unknown) => {
   return 0;
 };
 
-const addCategory = (categories: Record<string, number>, name: string, amount: unknown) => {
-  const cleanName = String(name || "Uncategorized").trim();
+const addCategory = (categories: Record<string, number>, name: string, amount: unknown, isEnglish: boolean) => {
+  const cleanName = translateCategory(String(name || "").trim(), isEnglish) || tr(STR.uncategorized, isEnglish);
   const cleanAmount = toNumber(amount);
   if (cleanAmount > 0) categories[cleanName] = (categories[cleanName] || 0) + cleanAmount;
 };
 
-const collectCategories = (analysis: any, categories: Record<string, number>) => {
+const collectCategories = (analysis: any, categories: Record<string, number>, isEnglish: boolean) => {
   const source = analysis?.analysis ?? analysis;
 
   ["cogs", "opex", "fees", "personal"].forEach((key) => {
     if (Array.isArray(source?.[key])) {
-      source[key].forEach((item: any) => addCategory(categories, item?.desc || item?.name || item?.category || key, item?.amt ?? item?.amount));
+      source[key].forEach((item: any) => addCategory(categories, item?.desc || item?.name || item?.category || key, item?.amt ?? item?.amount, isEnglish));
     }
   });
 
   if (Array.isArray(source?.sections)) {
     source.sections.forEach((section: any) => {
       if (Array.isArray(section?.items)) {
-        section.items.forEach((item: any) => addCategory(categories, item?.name || item?.category || section?.title, item?.amount ?? item?.total));
+        section.items.forEach((item: any) => addCategory(categories, item?.name || item?.category || section?.title, item?.amount ?? item?.total, isEnglish));
       }
     });
   }
 
   if (Array.isArray(source?.categories)) {
-    source.categories.forEach((item: any) => addCategory(categories, item?.name || item?.category, item?.amount ?? item?.total));
+    source.categories.forEach((item: any) => addCategory(categories, item?.name || item?.category, item?.amount ?? item?.total, isEnglish));
   }
 
   if (Array.isArray(source?.expenses_by_category)) {
-    source.expenses_by_category.forEach((item: any) => addCategory(categories, item?.category || item?.name, item?.amount ?? item?.total));
+    source.expenses_by_category.forEach((item: any) => addCategory(categories, item?.category || item?.name, item?.amount ?? item?.total, isEnglish));
   }
 };
 
@@ -91,6 +92,7 @@ type RangeOption = "all" | "last3" | "last6" | string;
 const History = () => {
   const { user, profile, loading: authLoading } = useAuth();
   const { lang } = useLanguage();
+  const isEnglish = lang === "en";
   const navigate = useNavigate();
   const { toast } = useToast();
   const [rows, setRows] = useState<AnalysisRow[]>([]);
@@ -127,12 +129,12 @@ const History = () => {
   }, [rows]);
 
   const rangeLabel = useMemo(() => {
-    if (range === "all") return "All years";
-    if (range === "last3") return "Last quarter (3 months)";
-    if (range === "last6") return "Last 6 months";
-    if (range === previousYear) return `Previous year (${range})`;
-    return `Year ${range}`;
-  }, [range, previousYear]);
+    if (range === "all") return tr(STR.allYears, isEnglish);
+    if (range === "last3") return tr(STR.lastQuarter, isEnglish);
+    if (range === "last6") return tr(STR.last6Months, isEnglish);
+    if (range === previousYear) return `${tr(STR.previousYearWord, isEnglish)} (${range})`;
+    return `${tr(STR.yearWord, isEnglish)} ${range}`;
+  }, [range, previousYear, isEnglish]);
 
   useEffect(() => {
     if (!user || !/^\d{4}$/.test(range)) { setAnnualSummary(null); return; }
@@ -180,18 +182,18 @@ const History = () => {
       t.fees += Number(r.fees_total || 0);
       t.spent += Number(r.total_spent || 0);
 
-      collectCategories(r.full_analysis, categories);
+      collectCategories(r.full_analysis, categories, isEnglish);
     });
     // Fallback: if no detailed categories, use the 4 buckets
     if (Object.keys(categories).length === 0) {
-      if (t.cogs > 0) categories["COGS / Cost of Goods Sold"] = t.cogs;
-      if (t.opex > 0) categories["Operating Expenses (OpEx)"] = t.opex;
-      if (t.personal > 0) categories["Personal Expenses"] = t.personal;
-      if (t.fees > 0) categories["Fees / Commissions"] = t.fees;
+      if (t.cogs > 0) categories[tr(STR.cogsFallback, isEnglish)] = t.cogs;
+      if (t.opex > 0) categories[tr(STR.opexFallback, isEnglish)] = t.opex;
+      if (t.personal > 0) categories[tr(STR.personalFallback, isEnglish)] = t.personal;
+      if (t.fees > 0) categories[tr(STR.feesFallback, isEnglish)] = t.fees;
     }
     const sorted = Object.entries(categories).sort((a, b) => b[1] - a[1]);
     return { ...t, net: t.revenues - t.spent, categories: sorted };
-  }, [filtered]);
+  }, [filtered, isEnglish]);
 
   const viewDetail = (row: AnalysisRow) => {
     navigate("/results", { state: { results: row.full_analysis } });
@@ -207,12 +209,12 @@ const History = () => {
         profile?.name || "",
         isEnglish
       );
-      if (format === "excel") await generateProfessionalExcel(consolidated);
-      else generateProfessionalPDF(consolidated);
+      if (format === "excel") await generateProfessionalExcel(consolidated, isEnglish);
+      else generateProfessionalPDF(consolidated, isEnglish);
     } catch (err) {
       toast({
         title: "Error",
-        description: err instanceof Error ? err.message : "Could not generate the file.",
+        description: err instanceof Error ? err.message : tr(STR.couldNotGenerateFile, isEnglish),
         variant: "destructive",
       });
     } finally {
@@ -226,7 +228,7 @@ const History = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Statement deleted", description: `${row.original_filename || row.period} was deleted.` });
+      toast({ title: tr(STR.statementDeletedTitle, isEnglish), description: `${row.original_filename || row.period} ${tr(STR.wasDeletedSuffix, isEnglish)}` });
       setRows((prev) => prev.filter((r) => r.id !== row.id));
     }
     setDeleting(null);
@@ -248,23 +250,23 @@ const History = () => {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2">
               <HistoryIcon className="h-5 w-5 text-primary" />
-              Summary ({filtered.length} statement{filtered.length === 1 ? "" : "s"})
+              {tr(STR.summaryLabel, isEnglish)} ({filtered.length} {tr(STR.statementWord, isEnglish)}{filtered.length === 1 ? "" : "s"})
             </CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
               <Select value={range} onValueChange={setRange}>
                 <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Period" />
+                  <SelectValue placeholder={tr(STR.periodWord, isEnglish)} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All years</SelectItem>
-                  <SelectItem value="last3">Last quarter (3 months)</SelectItem>
-                  <SelectItem value="last6">Last 6 months</SelectItem>
+                  <SelectItem value="all">{tr(STR.allYears, isEnglish)}</SelectItem>
+                  <SelectItem value="last3">{tr(STR.lastQuarter, isEnglish)}</SelectItem>
+                  <SelectItem value="last6">{tr(STR.last6Months, isEnglish)}</SelectItem>
                   {!years.includes(previousYear) && (
-                    <SelectItem value={previousYear}>Previous year ({previousYear})</SelectItem>
+                    <SelectItem value={previousYear}>{tr(STR.previousYearWord, isEnglish)} ({previousYear})</SelectItem>
                   )}
                   {years.map((y) => (
                     <SelectItem key={y} value={y}>
-                      {y === previousYear ? `Previous year (${y})` : `Year ${y}`}
+                      {y === previousYear ? `${tr(STR.previousYearWord, isEnglish)} (${y})` : `${tr(STR.yearWord, isEnglish)} ${y}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -273,7 +275,7 @@ const History = () => {
                 size="sm" variant="outline"
                 disabled={filtered.length === 0 || downloading}
                 onClick={() => handleDownload("excel")}
-                title={`Download Excel — ${rangeLabel}`}
+                title={`${tr(STR.downloadExcel, isEnglish)} — ${rangeLabel}`}
               >
                 {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 mr-1" />}
                 Excel ({rangeLabel})
@@ -282,7 +284,7 @@ const History = () => {
                 size="sm" variant="outline"
                 disabled={filtered.length === 0 || downloading}
                 onClick={() => handleDownload("pdf")}
-                title={`Download PDF — ${rangeLabel}`}
+                title={`${tr(STR.downloadPdf, isEnglish)} — ${rangeLabel}`}
               >
                 {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
                 PDF ({rangeLabel})
@@ -293,31 +295,31 @@ const History = () => {
             {annualSummary && (
               <div className="mb-4 flex items-center gap-2 text-xs rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-primary">
                 <CalendarCheck className="h-4 w-4 shrink-0" />
-                Annual summary {range} generated automatically on {new Date(annualSummary.generated_at).toLocaleDateString("en-US")} — ready for taxes.
+                {tr(STR.annualSummaryPrefix, isEnglish)} {range} {tr(STR.generatedOn, isEnglish)} {new Date(annualSummary.generated_at).toLocaleDateString(isEnglish ? "en-US" : "es-CO")} {tr(STR.readyForTaxes, isEnglish)}
               </div>
             )}
             {filtered.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
-                You have no analyses for this period.
+                {tr(STR.noAnalysesPeriod, isEnglish)}
               </p>
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div className="rounded-lg border p-4 bg-card">
                     <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                      <TrendingUp className="h-4 w-4 text-primary" /> Total Income
+                      <TrendingUp className="h-4 w-4 text-primary" /> {tr(STR.totalIncome, isEnglish)}
                     </div>
                     <div className="text-2xl font-bold mt-1 text-primary">{fmt(totals.revenues)}</div>
                   </div>
                   <div className="rounded-lg border p-4 bg-card">
                     <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                      <TrendingDown className="h-4 w-4 text-destructive" /> Total Expenses
+                      <TrendingDown className="h-4 w-4 text-destructive" /> {tr(STR.totalExpensesLabel, isEnglish)}
                     </div>
                     <div className="text-2xl font-bold mt-1 text-destructive">{fmt(totals.spent)}</div>
                   </div>
                   <div className="rounded-lg border p-4 bg-card">
                     <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                      <Wallet className="h-4 w-4" /> Net
+                      <Wallet className="h-4 w-4" /> {tr(STR.net, isEnglish)}
                     </div>
                     <div className={`text-2xl font-bold mt-1 ${totals.net >= 0 ? "text-primary" : "text-destructive"}`}>
                       {fmt(totals.net)}
@@ -325,14 +327,14 @@ const History = () => {
                   </div>
                 </div>
 
-                <h3 className="font-semibold mb-2">What was the expense for?</h3>
+                <h3 className="font-semibold mb-2">{tr(STR.whatWasExpenseFor, isEnglish)}</h3>
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead className="text-right">% of expense</TableHead>
+                        <TableHead>{tr(STR.category, isEnglish)}</TableHead>
+                        <TableHead className="text-right">{tr(STR.amount, isEnglish)}</TableHead>
+                        <TableHead className="text-right">{tr(STR.pctOfExpense, isEnglish)}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -360,10 +362,10 @@ const History = () => {
                 <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-semibold text-destructive">
-                    You have {duplicatePeriodIds.groups.length} period(s) with more than one statement saved
+                    {tr(STR.youHave, isEnglish)} {duplicatePeriodIds.groups.length} {tr(STR.periodsWithMultipleSuffix, isEnglish)}
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    Review the rows marked below (same month/year) and delete the one that doesn't belong using the trash button, so your accounting doesn't get duplicated.
+                    {tr(STR.reviewRowsMarked, isEnglish)}
                   </p>
                   {duplicatePeriodIds.groups.map((g, i) => (
                     <p key={i} className="text-xs text-foreground">
@@ -378,30 +380,30 @@ const History = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Statements for this period</CardTitle>
+            <CardTitle>{tr(STR.statementsForPeriod, isEnglish)}</CardTitle>
           </CardHeader>
           <CardContent>
             {filtered.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No statements.</p>
+              <p className="text-muted-foreground text-center py-8">{tr(STR.noStatements, isEnglish)}</p>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>File</TableHead>
-                      <TableHead>Period</TableHead>
-                      <TableHead className="text-right">Income</TableHead>
-                      <TableHead className="text-right">Expenses</TableHead>
-                      <TableHead>Top category</TableHead>
-                      <TableHead className="text-center">Action</TableHead>
+                      <TableHead>{tr(STR.date, isEnglish)}</TableHead>
+                      <TableHead>{tr(STR.fileWord, isEnglish)}</TableHead>
+                      <TableHead>{tr(STR.periodWord, isEnglish)}</TableHead>
+                      <TableHead className="text-right">{tr(STR.income, isEnglish)}</TableHead>
+                      <TableHead className="text-right">{tr(STR.expenses, isEnglish)}</TableHead>
+                      <TableHead>{tr(STR.topCategory, isEnglish)}</TableHead>
+                      <TableHead className="text-center">{tr(STR.actionWord, isEnglish)}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filtered.map((row) => (
                       <TableRow key={row.id} className={duplicatePeriodIds.ids.has(row.id) ? "bg-destructive/10" : ""}>
                         <TableCell>
-                          {new Date(row.created_at).toLocaleDateString("en-US", {
+                          {new Date(row.created_at).toLocaleDateString(isEnglish ? "en-US" : "es-CO", {
                             year: "numeric", month: "short", day: "numeric",
                           })}
                         </TableCell>
@@ -420,7 +422,7 @@ const History = () => {
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
                             <Button size="sm" variant="outline" onClick={() => viewDetail(row)}>
-                              <Eye className="h-4 w-4 mr-1" /> View
+                              <Eye className="h-4 w-4 mr-1" /> {tr(STR.viewWord, isEnglish)}
                             </Button>
                             <Button
                               size="sm" variant="ghost"

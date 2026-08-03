@@ -12,14 +12,14 @@ import { supabase } from "@/integrations/supabase/client";
 
 const ANALYZE_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-statement`;
 
-const fileToBase64 = (file: File) =>
+const fileToBase64 = (file: File, couldNotReadMsg: string) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = String(reader.result || "");
       resolve(result.includes(",") ? result.split(",")[1] : result);
     };
-    reader.onerror = () => reject(reader.error || new Error("Could not read the file."));
+    reader.onerror = () => reject(reader.error || new Error(couldNotReadMsg));
     reader.readAsDataURL(file);
   });
 
@@ -118,7 +118,7 @@ const Dashboard = () => {
   };
 
   const analyzeOne = async (file: File) => {
-    const fileBase64 = await fileToBase64(file);
+    const fileBase64 = await fileToBase64(file, t("couldNotReadFile"));
     const response = await fetch(ANALYZE_API_URL, {
       method: "POST",
       headers: {
@@ -136,9 +136,9 @@ const Dashboard = () => {
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       console.error("Analyze API error:", response.status, data);
-      throw new Error(data?.error || data?.message || "The analyzer could not read this file.");
+      throw new Error(data?.error || data?.message || t("analyzerCouldNotRead"));
     }
-    if (!data) throw new Error("The analyzer did not return any results.");
+    if (!data) throw new Error(t("analyzerNoResults"));
     if ((data as any).error) throw new Error((data as any).error);
 
     if (user) {
@@ -212,7 +212,7 @@ const Dashboard = () => {
 
     if (errors.length > 0) {
       toast({
-        title: `⚠️ ${errors.length} error(s)`,
+        title: `⚠️ ${errors.length} ${t("errorWord")}`,
         description: errors.join(" | "),
         variant: "destructive",
       });
@@ -221,7 +221,7 @@ const Dashboard = () => {
     if (saved > 0) {
       toast({
         title: "✅",
-        description: `${saved} analysis/analyses saved. Check History — if two statements turn out to be for the same period, we'll flag it there so you can delete the one that doesn't belong.`,
+        description: `${saved} ${t("analysesSavedWord")} ${t("checkHistoryDuplicateWarning")}`,
       });
 
       if (saved === 1 && files.length === 1 && lastResult) {
@@ -237,7 +237,7 @@ const Dashboard = () => {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="text-muted-foreground text-sm">Loading...</p>
+          <p className="text-muted-foreground text-sm">{t("loadingText")}</p>
         </div>
       </div>
     );
@@ -248,7 +248,7 @@ const Dashboard = () => {
     return null;
   }
 
-  const displayName = profile?.name || user.email?.split("@")[0] || "User";
+  const displayName = profile?.name || user.email?.split("@")[0] || t("userFallback");
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -271,9 +271,9 @@ const Dashboard = () => {
 
         <div className="grid grid-cols-3 gap-3 mb-6 opacity-0 animate-slide-up stagger-2">
           {[
-            { icon: Sparkles, label: "AI Analysis", desc: "Claude Sonnet 5" },
-            { icon: FileText, label: "Formats", desc: "PDF, CSV, XLSX" },
-            { icon: CheckCircle2, label: "P&L Report", desc: "Professional" },
+            { icon: Sparkles, label: t("aiAnalysisLabel"), desc: "Claude Sonnet 5" },
+            { icon: FileText, label: t("formatsLabel"), desc: "PDF, CSV, XLSX" },
+            { icon: CheckCircle2, label: t("plReportLabel"), desc: t("professionalWord") },
           ].map((item) => (
             <div key={item.label}
               className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border/50 hover-lift cursor-default">
@@ -320,7 +320,7 @@ const Dashboard = () => {
                     <FileText className="h-8 w-8 text-primary" />
                   </div>
                   <p className="font-semibold text-foreground">
-                    {files.length} archivo{files.length === 1 ? "" : "s"} listo{files.length === 1 ? "" : "s"}
+                    {files.length} {t("fileWord")}{files.length === 1 ? "" : "s"} {t("readyWord")}{files.length === 1 ? "" : "s"}
                   </p>
                   <div className="w-full max-w-md space-y-1.5 text-left">
                     {files.map((f, i) => (
@@ -339,7 +339,7 @@ const Dashboard = () => {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-primary mt-1">+ Click or drag to add more</p>
+                  <p className="text-xs text-primary mt-1">{t("clickOrDragAddMore")}</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-3">
@@ -348,7 +348,7 @@ const Dashboard = () => {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground">{t("dragDrop")}</p>
-                    <p className="text-sm text-muted-foreground">{t("orClick")} (you can select multiple)</p>
+                    <p className="text-sm text-muted-foreground">{t("orClick")} {t("selectMultiple")}</p>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">{t("supportedFormats")}</p>
                 </div>
@@ -358,7 +358,7 @@ const Dashboard = () => {
             {loading && (
               <div className="space-y-2 animate-fade-in">
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Analyzing {processedCount}/{files.length}: {currentFileName}</span>
+                  <span>{t("analyzingWord")} {processedCount}/{files.length}: {currentFileName}</span>
                   <span>{Math.round(uploadProgress)}%</span>
                 </div>
 

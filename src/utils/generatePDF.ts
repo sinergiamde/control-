@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { totalBankWithdrawals } from "./reconciliation";
+import { STR, tr } from "./i18n";
 import type { LineItem, ResultsData, Section, SectionKind, ThirdPartyPayment } from "./reportTypes";
 
 type RGB = [number, number, number];
@@ -56,8 +57,8 @@ function pageHeader(doc: jsPDF, pageWidth: number, title: string, subtitle: stri
   return 36;
 }
 
-/** A plain colored banner bar for sub-sections within a page (e.g. "CHEQUES EMITIDOS" inside
- * the Pagos a Terceros page). Not a table — just a labeled divider. */
+/** A plain colored banner bar for sub-sections within a page (e.g. "CHECKS ISSUED" inside
+ * the Third Party Payments page). Not a table — just a labeled divider. */
 function sectionBanner(doc: jsPDF, y: number, pageWidth: number, text: string, bg: RGB): number {
   const height = 8;
   doc.setFillColor(...bg);
@@ -77,14 +78,15 @@ function ensureSpace(doc: jsPDF, y: number, threshold = 250): number {
   return y;
 }
 
-/** Renders the standard 5-column (Descripción | Categoría | Fecha/Detalle | Monto | % Ingresos)
- * line-item table used by Ingresos/COGS/OpEx/Alimentación/Personal. Returns the next free y. */
+/** Renders the standard 5-column (Description | Category | Date/Detail | Amount | % Revenue)
+ * line-item table used by Revenue/COGS/OpEx/Food/Personal. Returns the next free y. */
 function renderLineItemsTable(
   doc: jsPDF,
   startY: number,
   items: LineItem[],
   totalLabel: string,
-  colors: { bg: RGB; totalBg: RGB }
+  colors: { bg: RGB; totalBg: RGB },
+  isEnglish: boolean
 ): number {
   const body = items.map((item) => [item.name, item.category || "", item.detail || "", fmt(item.amount), `${item.percentage.toFixed(1)}%`]);
   const total = items.reduce((sum, i) => sum + i.amount, 0);
@@ -92,7 +94,7 @@ function renderLineItemsTable(
 
   autoTable(doc, {
     startY,
-    head: [["Descripción", "Categoría", "Fecha / Detalle", "Monto", "% Ingresos"]],
+    head: [[tr(STR.description, isEnglish), tr(STR.category, isEnglish), tr(STR.dateDetail, isEnglish), tr(STR.amount, isEnglish), tr(STR.pctRevenue, isEnglish)]],
     body,
     theme: "plain",
     styles: { fontSize: 8, cellPadding: 2 },
@@ -121,26 +123,26 @@ function renderLineItemsTable(
   return (doc as any).lastAutoTable.finalY + 4;
 }
 
-function renderExecutiveSummary(doc: jsPDF, pageWidth: number, data: ResultsData) {
-  let y = pageHeader(doc, pageWidth, `RESUMEN EJECUTIVO — ${data.companyName || "CTRL+"}`, `${data.period || ""} | Prepared by CTRL+ by TaxForYou`);
+function renderExecutiveSummary(doc: jsPDF, pageWidth: number, data: ResultsData, isEnglish: boolean) {
+  let y = pageHeader(doc, pageWidth, `${tr(STR.executiveSummary, isEnglish)} — ${data.companyName || "CTRL+"}`, `${data.period || ""} | ${tr(STR.preparedBy, isEnglish)}`);
 
   const bank = data.bankSummary;
   if (bank?.found) {
     const withdrawals = totalBankWithdrawals(bank);
     const rows: [string, number][] = ([
-      ["Saldo Inicial", bank.beginningBalance],
-      ["Saldo Final", bank.endingBalance],
-      ["Total Depósitos y Adiciones", bank.deposits.amount],
-      ["Total Retiros", withdrawals],
+      [tr(STR.beginningBalance, isEnglish), bank.beginningBalance],
+      [tr(STR.endingBalance, isEnglish), bank.endingBalance],
+      [tr(STR.totalDeposits, isEnglish), bank.deposits.amount],
+      [tr(STR.totalWithdrawals, isEnglish), withdrawals],
     ] as [string, number | null][]).filter((r): r is [string, number] => r[1] !== null);
 
     if (bank.beginningBalance !== null && bank.endingBalance !== null) {
-      rows.push(["Resultado del Período (Cambio Neto en Caja)", bank.endingBalance - bank.beginningBalance]);
+      rows.push([tr(STR.periodResult, isEnglish), bank.endingBalance - bank.beginningBalance]);
     }
 
     autoTable(doc, {
       startY: y,
-      head: [["ACTIVIDAD DE LA CUENTA (según extracto bancario)", ""]],
+      head: [[tr(STR.accountActivity, isEnglish), ""]],
       body: rows.map(([label, v]) => [label, fmt(v)]),
       theme: "plain",
       styles: { fontSize: 9, cellPadding: 2 },
@@ -153,18 +155,18 @@ function renderExecutiveSummary(doc: jsPDF, pageWidth: number, data: ResultsData
 
   const totalFood = data.totalFood || 0;
   const plRows: [string, number][] = [
-    ["Total Ingresos", data.totalRevenue],
-    ["Total COGS", data.totalCOGS],
-    ["Utilidad Bruta (Gross Profit)", data.grossProfit],
-    ["Total OpEx (incl. Alimentación)", data.totalOpex + totalFood],
-    ["  de los cuales, Alimentación", totalFood],
-    ["EBITDA", data.ebitda],
-    ["Total Gastos Personales", data.totalPersonal],
-    ["RESULTADO NETO (Net Income)", data.netIncome],
+    [tr(STR.totalIncome, isEnglish), data.totalRevenue],
+    [tr(STR.totalCOGS, isEnglish), data.totalCOGS],
+    [tr(STR.grossProfit, isEnglish), data.grossProfit],
+    [tr(STR.totalOpexInclFood, isEnglish), data.totalOpex + totalFood],
+    [tr(STR.ofWhichFood, isEnglish), totalFood],
+    [tr(STR.ebitda, isEnglish), data.ebitda],
+    [tr(STR.totalPersonalExpenses, isEnglish), data.totalPersonal],
+    [tr(STR.netResult, isEnglish), data.netIncome],
   ];
   autoTable(doc, {
     startY: y,
-    head: [["RESUMEN P&L", "Monto", "% Ingresos"]],
+    head: [[tr(STR.plSummary, isEnglish), tr(STR.amount, isEnglish), tr(STR.pctRevenue, isEnglish)]],
     body: plRows.map(([label, v]) => [label, fmt(v), data.totalRevenue > 0 ? pct(v / data.totalRevenue) : "0%"]),
     theme: "plain",
     styles: { fontSize: 9, cellPadding: 2 },
@@ -178,7 +180,7 @@ function renderExecutiveSummary(doc: jsPDF, pageWidth: number, data: ResultsData
 
   autoTable(doc, {
     startY: y,
-    head: [["INDICADOR", "VALOR", "INTERPRETACIÓN"]],
+    head: [[tr(STR.indicator, isEnglish), tr(STR.value, isEnglish), tr(STR.interpretation, isEnglish)]],
     body: data.kpis.map((k) => [k.label, k.value, k.description]),
     theme: "plain",
     styles: { fontSize: 8, cellPadding: 2 },
@@ -196,8 +198,8 @@ function renderExecutiveSummary(doc: jsPDF, pageWidth: number, data: ResultsData
       startY: y,
       body: [[
         ok
-          ? "✓ CONCILIADO — los totales clasificados cuadran contra el resumen del banco."
-          : `⚠ ${data.reconciliation.discrepancies.length} discrepancia(s) contra el resumen del banco — ver ALERTAS Y RECOMENDACIONES.`,
+          ? tr(STR.reconciledOk, isEnglish)
+          : `⚠ ${data.reconciliation.discrepancies.length} ${tr(STR.discrepanciesBanner, isEnglish)}`,
       ]],
       theme: "plain",
       styles: { fontSize: 9, cellPadding: 3, fontStyle: "bold" },
@@ -207,28 +209,32 @@ function renderExecutiveSummary(doc: jsPDF, pageWidth: number, data: ResultsData
   }
 }
 
-function renderLineItemsPage(doc: jsPDF, pageWidth: number, title: string, period: string, section: Section | undefined, colors: { bg: RGB; totalBg: RGB }) {
-  const y = pageHeader(doc, pageWidth, title, `${period} | Prepared by CTRL+ by TaxForYou`);
-  renderLineItemsTable(doc, y, section?.items || [], section?.totalLabel || "Total", colors);
+function renderLineItemsPage(doc: jsPDF, pageWidth: number, title: string, period: string, section: Section | undefined, colors: { bg: RGB; totalBg: RGB }, isEnglish: boolean) {
+  const y = pageHeader(doc, pageWidth, title, `${period} | ${tr(STR.preparedBy, isEnglish)}`);
+  renderLineItemsTable(doc, y, section?.items || [], section?.totalLabel || tr(STR.total, isEnglish), colors, isEnglish);
 }
 
-function renderOpexPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
-  let y = pageHeader(doc, pageWidth, "GASTOS OPERATIVOS (OPEX)", `${data.period || ""} | Incluye subcategoría de Alimentación (comidas de trabajo)`);
+function renderOpexPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEnglish: boolean) {
+  let y = pageHeader(
+    doc, pageWidth,
+    isEnglish ? "OPERATING EXPENSES (OPEX)" : "GASTOS OPERATIVOS (OPEX)",
+    `${data.period || ""} | ${isEnglish ? "Includes Food subcategory (work meals)" : "Incluye subcategoría de Alimentación (comidas de trabajo)"}`
+  );
 
   const opexSection = data.sections.find((s) => s.kind === "opex");
-  y = renderLineItemsTable(doc, y, opexSection?.items || [], opexSection?.totalLabel || "Total OpEx", SECTION_COLOR_BY_KIND.opex);
+  y = renderLineItemsTable(doc, y, opexSection?.items || [], opexSection?.totalLabel || tr(STR.totalOpex, isEnglish), SECTION_COLOR_BY_KIND.opex, isEnglish);
 
   const foodSection = data.sections.find((s) => s.kind === "food");
   if (foodSection && foodSection.items.length > 0) {
     y = ensureSpace(doc, y);
-    y = sectionBanner(doc, y, pageWidth, "ALIMENTACIÓN (Comidas de trabajo — fast food/café/snacks)", SECTION_COLOR_BY_KIND.food.bg);
-    y = renderLineItemsTable(doc, y, foodSection.items, foodSection.totalLabel || "Total Alimentación", SECTION_COLOR_BY_KIND.food);
+    y = sectionBanner(doc, y, pageWidth, tr(STR.foodBanner, isEnglish).trim(), SECTION_COLOR_BY_KIND.food.bg);
+    y = renderLineItemsTable(doc, y, foodSection.items, foodSection.totalLabel || tr(STR.totalFood, isEnglish), SECTION_COLOR_BY_KIND.food, isEnglish);
   }
 
   y = ensureSpace(doc, y);
   autoTable(doc, {
     startY: y,
-    body: [["TOTAL OPEX (incluye Alimentación)", fmt(data.totalOpex + (data.totalFood || 0))]],
+    body: [[tr(STR.totalOpexWithFood, isEnglish), fmt(data.totalOpex + (data.totalFood || 0))]],
     theme: "plain",
     styles: { fontSize: 10, cellPadding: 3, fontStyle: "bold" },
     bodyStyles: { fillColor: COLORS.totalOrange },
@@ -236,29 +242,33 @@ function renderOpexPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
   });
 }
 
-function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
-  let y = pageHeader(doc, pageWidth, "PAGOS A TERCEROS (para determinar 1099)", `${data.period || ""} | Cheques, Zelle y transferencias personales — uno por uno`);
+function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEnglish: boolean) {
+  let y = pageHeader(
+    doc, pageWidth,
+    `${tr(STR.thirdPartyPayments, isEnglish)} (${tr(STR.thirdPartyPaymentsSubtitle1099, isEnglish)})`,
+    `${data.period || ""} | ${tr(STR.thirdPartyPaymentsSubtitleDetail, isEnglish)}`
+  );
   const buckets = data.thirdPartyBuckets;
 
-  // --- Cheques Emitidos ---
-  y = sectionBanner(doc, y, pageWidth, "CHEQUES EMITIDOS", SECTION_COLOR_BY_KIND.cogs.bg);
+  // --- Checks Issued ---
+  y = sectionBanner(doc, y, pageWidth, tr(STR.checksIssued, isEnglish), SECTION_COLOR_BY_KIND.cogs.bg);
   const checks = buckets?.checks || [];
   const checksTotal = checks.reduce((sum, p) => sum + p.amt, 0);
-  const checksBody: any[] = checks.map((p) => [p.identifier, p.payee || "Verificar", p.date || "", fmt(p.amt), p.category || "", p.classification || ""]);
-  checksBody.push([{ content: "TOTAL CHEQUES EMITIDOS", colSpan: 3, styles: { fontStyle: "bold" } }, fmt(checksTotal), "", ""]);
+  const checksBody: any[] = checks.map((p) => [p.identifier, p.payee || tr(STR.verifyNoPayee, isEnglish), p.date || "", fmt(p.amt), p.category || "", p.classification || ""]);
+  checksBody.push([{ content: tr(STR.totalChecksIssued, isEnglish), colSpan: 3, styles: { fontStyle: "bold" } }, fmt(checksTotal), "", ""]);
 
-  const checksField = data.reconciliation?.fields.find((f) => f.label === "Cheques Emitidos");
+  const checksField = data.reconciliation?.fields.find((f) => f.id === "checksIssued");
   if (checksField && checksField.bankAmount !== null) {
-    checksBody.push([{ content: "Total según extracto bancario (Checks Paid)", colSpan: 3 }, fmt(checksField.bankAmount), "", ""]);
+    checksBody.push([{ content: tr(STR.perBankSummaryChecksPaid, isEnglish), colSpan: 3 }, fmt(checksField.bankAmount), "", ""]);
     checksBody.push([
-      { content: "Diferencia", colSpan: 3, styles: { fontStyle: "bold", textColor: checksField.ok ? COLORS.sectionRevenue : COLORS.sectionPersonal } },
+      { content: tr(STR.difference, isEnglish), colSpan: 3, styles: { fontStyle: "bold", textColor: checksField.ok ? COLORS.sectionRevenue : COLORS.sectionPersonal } },
       fmt(checksField.delta ?? 0), "", "",
     ]);
   }
 
   autoTable(doc, {
     startY: y,
-    head: [["N° Cheque", "Beneficiario", "Fecha", "Monto", "Categoría", "Clasificación"]],
+    head: [[tr(STR.checkNumber, isEnglish), tr(STR.payee, isEnglish), tr(STR.date, isEnglish), tr(STR.amount, isEnglish), tr(STR.category, isEnglish), tr(STR.classification, isEnglish)]],
     body: checksBody,
     theme: "plain",
     styles: { fontSize: 8, cellPadding: 2 },
@@ -268,21 +278,21 @@ function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData) 
   });
   y = (doc as any).lastAutoTable.finalY + 6;
 
-  // --- Transacciones Zelle ---
+  // --- Zelle Transactions ---
   y = ensureSpace(doc, y, 230);
-  y = sectionBanner(doc, y, pageWidth, "TRANSACCIONES ZELLE", SECTION_COLOR_BY_KIND.opex.bg);
+  y = sectionBanner(doc, y, pageWidth, tr(STR.zelleTransactions, isEnglish), SECTION_COLOR_BY_KIND.opex.bg);
 
   const zelle: ThirdPartyPayment[] = [...(buckets?.zelleOutgoing || []), ...(buckets?.zelleIncoming || [])];
   const zelleTotal = zelle.reduce((sum, p) => sum + p.amt, 0);
   const zelleBody = zelle.map((p) => [
-    p.direction === "incoming" ? "Entrante (cliente paga)" : "Saliente (negocio paga)",
+    p.direction === "incoming" ? tr(STR.incomingClientPays, isEnglish) : tr(STR.outgoingBusinessPays, isEnglish),
     p.identifier, p.date || "", fmt(p.amt), p.category || "", [p.classification, p.alert].filter(Boolean).join(" — "),
   ]);
-  zelleBody.push([{ content: "TOTAL ZELLE", colSpan: 3, styles: { fontStyle: "bold" } } as any, fmt(zelleTotal), "", ""]);
+  zelleBody.push([{ content: tr(STR.totalZelle, isEnglish), colSpan: 3, styles: { fontStyle: "bold" } } as any, fmt(zelleTotal), "", ""]);
 
   autoTable(doc, {
     startY: y,
-    head: [["Dirección", "Beneficiario / Remitente", "Fecha", "Monto", "Categoría", "Clasificación / Alerta"]],
+    head: [[tr(STR.direction, isEnglish), tr(STR.payeeSender, isEnglish), tr(STR.date, isEnglish), tr(STR.amount, isEnglish), tr(STR.category, isEnglish), tr(STR.classificationAlert, isEnglish)]],
     body: zelleBody,
     theme: "plain",
     styles: { fontSize: 8, cellPadding: 2 },
@@ -292,15 +302,15 @@ function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData) 
   });
   y = (doc as any).lastAutoTable.finalY + 6;
 
-  // --- Transferencias Personales ---
+  // --- Personal Transfers ---
   y = ensureSpace(doc, y, 230);
-  y = sectionBanner(doc, y, pageWidth, "TRANSFERENCIAS PERSONALES", SECTION_COLOR_BY_KIND.personal.bg);
+  y = sectionBanner(doc, y, pageWidth, tr(STR.personalTransfers, isEnglish), SECTION_COLOR_BY_KIND.personal.bg);
 
   const transfers = buckets?.personalTransfers || [];
   if (transfers.length === 0) {
     autoTable(doc, {
       startY: y,
-      body: [["Sin transferencias personales identificadas en este período."]],
+      body: [[tr(STR.noPersonalTransfers, isEnglish)]],
       theme: "plain",
       styles: { fontSize: 9, cellPadding: 3 },
       margin: { left: 14, right: 14 },
@@ -308,11 +318,11 @@ function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData) 
   } else {
     const transfersTotal = transfers.reduce((sum, i) => sum + i.amount, 0);
     const body = transfers.map((item) => [item.name, item.category || "", item.detail || "", fmt(item.amount)]);
-    body.push(["TOTAL TRANSFERENCIAS PERSONALES", "", "", fmt(transfersTotal)]);
+    body.push([tr(STR.totalPersonalTransfers, isEnglish), "", "", fmt(transfersTotal)]);
 
     autoTable(doc, {
       startY: y,
-      head: [["Descripción", "Categoría", "Fecha / Detalle", "Monto"]],
+      head: [[tr(STR.description, isEnglish), tr(STR.category, isEnglish), tr(STR.dateDetail, isEnglish), tr(STR.amount, isEnglish)]],
       body,
       theme: "plain",
       styles: { fontSize: 8, cellPadding: 2 },
@@ -328,8 +338,8 @@ function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData) 
   }
 }
 
-function renderFullPLPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
-  let y = pageHeader(doc, pageWidth, `P&L COMPLETO — ${data.companyName || "CTRL+"}`, `${data.period || ""} | Prepared by CTRL+ by TaxForYou`);
+function renderFullPLPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEnglish: boolean) {
+  let y = pageHeader(doc, pageWidth, `${tr(STR.fullPL, isEnglish)} — ${data.companyName || "CTRL+"}`, `${data.period || ""} | ${tr(STR.preparedBy, isEnglish)}`);
 
   // Third Party Payments is an informational cross-reference (its amounts are already counted
   // within Revenue/COGS/OpEx/Personal above) — it gets its own dedicated page, not a line in the
@@ -373,7 +383,7 @@ function renderFullPLPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
     if (section.kind === "cogs") {
       autoTable(doc, {
         startY: y,
-        body: [["UTILIDAD BRUTA (GROSS PROFIT)", fmt(data.grossProfit), data.totalRevenue > 0 ? pct(data.grossProfit / data.totalRevenue) : "0%", "Revenue − COGS"]],
+        body: [[tr(STR.grossProfitCaption, isEnglish), fmt(data.grossProfit), data.totalRevenue > 0 ? pct(data.grossProfit / data.totalRevenue) : "0%", tr(STR.revenueMinusCogs, isEnglish)]],
         theme: "plain",
         styles: { fontSize: 9, cellPadding: 2, fontStyle: "bold" },
         bodyStyles: { fillColor: COLORS.totalGreen },
@@ -389,8 +399,8 @@ function renderFullPLPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
   autoTable(doc, {
     startY: y,
     body: [
-      ["EBITDA (Utilidad Operativa)", fmt(data.ebitda), data.totalRevenue > 0 ? pct(data.ebitda / data.totalRevenue) : "0%", "Gross Profit − OpEx − Alimentación"],
-      ["RESULTADO NETO (NET INCOME)", fmt(data.netIncome), data.totalRevenue > 0 ? pct(data.netIncome / data.totalRevenue) : "0%", "EBITDA − Personal"],
+      [tr(STR.ebitdaCaption, isEnglish), fmt(data.ebitda), data.totalRevenue > 0 ? pct(data.ebitda / data.totalRevenue) : "0%", tr(STR.ebitdaFormula, isEnglish)],
+      [tr(STR.netIncomeCaption, isEnglish), fmt(data.netIncome), data.totalRevenue > 0 ? pct(data.netIncome / data.totalRevenue) : "0%", tr(STR.netIncomeFormula, isEnglish)],
     ],
     theme: "plain",
     styles: { fontSize: 10, cellPadding: 3, fontStyle: "bold" },
@@ -400,14 +410,14 @@ function renderFullPLPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
   });
 }
 
-function renderAlertsPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
-  const y = pageHeader(doc, pageWidth, "ALERTAS Y RECOMENDACIONES", `${data.period || ""} | ${data.companyName || "CTRL+"}`);
+function renderAlertsPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEnglish: boolean) {
+  const y = pageHeader(doc, pageWidth, tr(STR.alertsRecommendations, isEnglish), `${data.period || ""} | ${data.companyName || "CTRL+"}`);
   const flags = data.redFlags || [];
 
   if (flags.length === 0) {
     autoTable(doc, {
       startY: y,
-      body: [["✓ Sin alertas — no se detectaron discrepancias ni patrones de riesgo en este período."]],
+      body: [[tr(STR.noAlerts, isEnglish)]],
       theme: "plain",
       styles: { fontSize: 9, cellPadding: 3 },
       bodyStyles: { fillColor: COLORS.totalGreen },
@@ -426,37 +436,37 @@ function renderAlertsPage(doc: jsPDF, pageWidth: number, data: ResultsData) {
   });
 }
 
-export function generateProfessionalPDF(data: ResultsData) {
+export function generateProfessionalPDF(data: ResultsData, isEnglish = true) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  renderExecutiveSummary(doc, pageWidth, data);
+  renderExecutiveSummary(doc, pageWidth, data, isEnglish);
 
   doc.addPage();
-  renderThirdPartyPage(doc, pageWidth, data);
+  renderThirdPartyPage(doc, pageWidth, data, isEnglish);
 
   doc.addPage();
-  renderLineItemsPage(doc, pageWidth, "INGRESOS", data.period || "", data.sections.find((s) => s.kind === "revenue"), SECTION_COLOR_BY_KIND.revenue);
+  renderLineItemsPage(doc, pageWidth, tr(STR.revenue, isEnglish), data.period || "", data.sections.find((s) => s.kind === "revenue"), SECTION_COLOR_BY_KIND.revenue, isEnglish);
 
   doc.addPage();
-  renderLineItemsPage(doc, pageWidth, "COGS (Costo de Ventas)", data.period || "", data.sections.find((s) => s.kind === "cogs"), SECTION_COLOR_BY_KIND.cogs);
+  renderLineItemsPage(doc, pageWidth, tr(STR.cogsFull, isEnglish), data.period || "", data.sections.find((s) => s.kind === "cogs"), SECTION_COLOR_BY_KIND.cogs, isEnglish);
 
   doc.addPage();
-  renderOpexPage(doc, pageWidth, data);
+  renderOpexPage(doc, pageWidth, data, isEnglish);
 
   doc.addPage();
-  renderLineItemsPage(doc, pageWidth, "Other Expenses/Possible Deductions", data.period || "", data.sections.find((s) => s.kind === "personal"), SECTION_COLOR_BY_KIND.personal);
+  renderLineItemsPage(doc, pageWidth, tr(STR.otherExpensesDeductions, isEnglish), data.period || "", data.sections.find((s) => s.kind === "personal"), SECTION_COLOR_BY_KIND.personal, isEnglish);
 
   doc.addPage();
-  renderFullPLPage(doc, pageWidth, data);
+  renderFullPLPage(doc, pageWidth, data, isEnglish);
 
   doc.addPage();
-  renderAlertsPage(doc, pageWidth, data);
+  renderAlertsPage(doc, pageWidth, data, isEnglish);
 
   doc.setFontSize(7);
   doc.setTextColor(150, 150, 150);
-  doc.text("P&L based on bank transactions — does not include pending A/R or A/P.", 14, doc.internal.pageSize.getHeight() - 12);
-  doc.text("Prepared by CTRL+ by TaxForYou | www.taxforyou.com", 14, doc.internal.pageSize.getHeight() - 8);
+  doc.text(tr(STR.footerDisclaimer, isEnglish), 14, doc.internal.pageSize.getHeight() - 12);
+  doc.text(tr(STR.preparedBy, isEnglish), 14, doc.internal.pageSize.getHeight() - 8);
 
   doc.setDrawColor(...COLORS.neonGreen);
   doc.setLineWidth(1);
