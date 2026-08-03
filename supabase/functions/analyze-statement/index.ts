@@ -79,6 +79,8 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 
 REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada laboral → OPEX con category "Meals (work — fast food/coffee/snacks)". Restaurantes o bares → PERSONAL con category "Meals (restaurant/bar)". En el campo "detail" de cualquier transacción de comida, especifica (en el idioma de salida) si el comercio es un restaurante/bar o un supermercado/tienda, y el nombre del comercio si aparece.
 
+REGLA DE TRANSFERENCIAS PERSONALES (importante): toda transferencia electrónica ("Online Transfer", "Electronic Withdrawal", transferencia a otra cuenta propia, etc.) sin justificación de negocio clara → PERSONAL con category "Personal bank transfer". En el campo "detail" indica el destino/origen tal como aparece en el extracto (nombre del beneficiario, banco/cuenta destino, o "transferencia a cuenta propia") — esto es indispensable para poder rastrear cada transferencia individualmente, ninguna puede quedar sin ese detalle.
+
 Si algo no está claro, clasifícalo de todas formas en la categoría más probable (sin agregar una alerta individual por eso — las alertas se generan aparte, en el Paso 5, solo para patrones que de verdad importan).
 
 Pagos por Zelle deben listarse individualmente (uno por transacción), nunca agrupados en las tablas de revenues/cogs/opex/fees/personal — pero en "alerts" sí deben agruparse por patrón (ver Paso 5).
@@ -96,11 +98,19 @@ PASO 5 — Genera "alerts": MÁXIMO 5 alertas en total, priorizando solo lo que 
   - Gastos personales grandes mezclados con la cuenta de negocio.
   No generes una alerta por cada transacción ambigua individual — agrupa. No agregues alertas para transacciones pequeñas, rutinarias o ya bien identificadas. Si de verdad no hay nada que reportar, incluye una sola nota breve indicando que todo está en orden (no la mezcles con las alertas de riesgo).
 
-PASO 6 — Genera "thirdPartyPayments": UNA entrada por cada CHEQUE y por cada pago por ZELLE que ya hayas clasificado en el Paso 2 (sin importar si quedaron en COGS, OPEX o PERSONAL). Esto es indispensable para que el negocio sepa a quién debe reportarle un formulario 1099 al final del año.
-  - Para cheques: "method"="Check", "identifier"=el número de cheque exacto tal como aparece en el extracto (ej. "1787").
-  - Para Zelle: "method"="Zelle", "identifier"=el nombre del destinatario/beneficiario exacto tal como aparece (ej. "Tony Signs").
+PASO 6 — Genera "thirdPartyPayments": UNA entrada por cada CHEQUE EMITIDO y por cada pago por ZELLE — tanto SALIENTE (el negocio paga) como ENTRANTE (un cliente le paga al negocio) — que ya hayas clasificado en el Paso 2, sin importar si quedó en REVENUES, COGS, OPEX o PERSONAL. Esto es indispensable para que el negocio sepa a quién debe reportarle un formulario 1099 al final del año, y para que ningún Zelle quede sin rastrear.
+  - Para cheques emitidos: "method"="Check", "direction"="outgoing", "identifier"=el número de cheque exacto tal como aparece en el extracto (ej. "1787"). Si el extracto muestra el nombre del beneficiario del cheque, ponlo en "payee"; si no aparece (es común), deja "payee" como cadena vacía "". No generes entradas de tipo Check para cheques recibidos/depositados (esos van solo en revenues).
+  - Para Zelle saliente: "method"="Zelle", "direction"="outgoing", "identifier"=nombre del destinatario tal como aparece, "payee"="".
+  - Para Zelle entrante (ya clasificado en revenues con category "Zelle"): "method"="Zelle", "direction"="incoming", "identifier"=nombre del remitente/pagador tal como aparece, "payee"="".
   - Incluye "date", "amt" (positivo) y "category" (la misma categoría exacta que le asignaste a esa transacción en el Paso 2).
-  - Si el mismo número de cheque o la misma persona recibe varios pagos, lista cada pago por separado (no los sumes en una sola entrada).
+  - "classification": etiqueta muy breve (máx. 4-5 palabras, en el idioma de salida) sobre la relevancia de ese pago para reportes 1099 (ej. "Posible 1099 — subcontratista", "Pago de cliente", "Pago a familiar", "Reembolso").
+  - "alert": cadena vacía "" salvo que ese pago puntual amerite una advertencia individual (ej. "Monto inusualmente alto para este beneficiario").
+  - Si el mismo número de cheque o la misma persona recibe/envía varios pagos, lista cada uno por separado (no los sumes en una sola entrada).
+
+PASO 7 — Busca en el extracto un recuadro de resumen impreso por el propio banco (ej. "Checking Summary", "Account Summary") con Saldo inicial, Depósitos y adiciones, Cheques pagados, Retiros con tarjeta/ATM, Retiros electrónicos y Saldo final — casi siempre con instancias y monto de cada uno. Genera "bankSummary" copiando esos valores TAL COMO los imprime el banco — NUNCA los calcules ni los infieras sumando las transacciones que ya clasificaste, es una verificación cruzada independiente para detectar transacciones que se te hayan escapado.
+  - Si el recuadro existe: "found"=true, y llena cada campo presente con el número exacto impreso.
+  - Si un campo específico no aparece impreso por separado (ej. el banco no distingue "Retiros electrónicos" de otros retiros — usa "otherWithdrawals" para retiros que no encajen en las demás categorías del resumen del banco): usa -1 tanto en "instances" como en "amount" de ese campo — NUNCA uses 0, porque 0 significaría que el banco reportó cero.
+  - Si el extracto no trae ningún recuadro de resumen del banco: "found"=false y usa -1 en TODOS los campos numéricos de "bankSummary".
 
 REGLAS OBLIGATORIAS:
 - No inventes transacciones que no estén en el documento.
@@ -150,12 +160,48 @@ const thirdPartyPaymentSchema = {
   type: "object",
   properties: {
     method: { type: "string" },
+    direction: { type: "string" },
     identifier: { type: "string" },
+    payee: { type: "string" },
     date: { type: "string" },
     amt: { type: "number" },
     category: { type: "string" },
+    classification: { type: "string" },
+    alert: { type: "string" },
   },
-  required: ["method", "identifier", "date", "amt", "category"],
+  required: [
+    "method", "direction", "identifier", "payee", "date",
+    "amt", "category", "classification", "alert",
+  ],
+  additionalProperties: false,
+};
+
+const bankSummaryFieldSchema = {
+  type: "object",
+  properties: {
+    instances: { type: "number" },
+    amount: { type: "number" },
+  },
+  required: ["instances", "amount"],
+  additionalProperties: false,
+};
+
+const bankSummarySchema = {
+  type: "object",
+  properties: {
+    found: { type: "boolean" },
+    beginningBalance: { type: "number" },
+    endingBalance: { type: "number" },
+    deposits: bankSummaryFieldSchema,
+    checksPaid: bankSummaryFieldSchema,
+    atmDebitWithdrawals: bankSummaryFieldSchema,
+    electronicWithdrawals: bankSummaryFieldSchema,
+    otherWithdrawals: bankSummaryFieldSchema,
+  },
+  required: [
+    "found", "beginningBalance", "endingBalance",
+    "deposits", "checksPaid", "atmDebitWithdrawals", "electronicWithdrawals", "otherWithdrawals",
+  ],
   additionalProperties: false,
 };
 
@@ -172,13 +218,14 @@ const RESULT_SCHEMA = {
     fees: { type: "array", items: lineItemSchema },
     personal: { type: "array", items: lineItemSchema },
     thirdPartyPayments: { type: "array", items: thirdPartyPaymentSchema },
+    bankSummary: bankSummarySchema,
     insights: { type: "array", items: { type: "string" } },
     alerts: { type: "array", items: { type: "string" } },
     annualSummary: { type: "array", items: monthSchema },
   },
   required: [
     "company", "period", "industry", "annualYear",
-    "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments",
+    "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments", "bankSummary",
     "insights", "alerts", "annualSummary",
   ],
   additionalProperties: false,
@@ -258,7 +305,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-5",
-        max_tokens: 16000,
+        max_tokens: 24000,
         system: [
           { type: "text", text: buildSystemPrompt(outputLang), cache_control: { type: "ephemeral" } },
         ],

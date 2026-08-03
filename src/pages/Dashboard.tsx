@@ -19,7 +19,7 @@ const fileToBase64 = (file: File) =>
       const result = String(reader.result || "");
       resolve(result.includes(",") ? result.split(",")[1] : result);
     };
-    reader.onerror = () => reject(reader.error || new Error("No se pudo leer el archivo."));
+    reader.onerror = () => reject(reader.error || new Error("Could not read the file."));
     reader.readAsDataURL(file);
   });
 
@@ -136,9 +136,9 @@ const Dashboard = () => {
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       console.error("Analyze API error:", response.status, data);
-      throw new Error(data?.error || data?.message || "El analizador no pudo leer este archivo.");
+      throw new Error(data?.error || data?.message || "The analyzer could not read this file.");
     }
-    if (!data) throw new Error("El analizador no devolvió resultados.");
+    if (!data) throw new Error("The analyzer did not return any results.");
     if ((data as any).error) throw new Error((data as any).error);
 
     if (user) {
@@ -201,7 +201,7 @@ const Dashboard = () => {
         saved++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`Error analizando ${f.name}:`, msg);
+        console.error(`Error analyzing ${f.name}:`, msg);
         errors.push(`${f.name}: ${msg}`);
       }
       setProcessedCount(i + 1);
@@ -212,7 +212,7 @@ const Dashboard = () => {
 
     if (errors.length > 0) {
       toast({
-        title: `⚠️ ${errors.length} error(es)`,
+        title: `⚠️ ${errors.length} error(s)`,
         description: errors.join(" | "),
         variant: "destructive",
       });
@@ -221,7 +221,7 @@ const Dashboard = () => {
     if (saved > 0) {
       toast({
         title: "✅",
-        description: `${saved} análisis guardado(s). Revisa el Historial — si dos extractos resultan ser del mismo período, ahí te avisamos para que elimines el que no corresponda.`,
+        description: `${saved} analysis/analyses saved. Check History — if two statements turn out to be for the same period, we'll flag it there so you can delete the one that doesn't belong.`,
       });
 
       if (saved === 1 && files.length === 1 && lastResult) {
@@ -339,7 +339,7 @@ const Dashboard = () => {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-primary mt-1">+ Click o arrastra para añadir más</p>
+                  <p className="text-xs text-primary mt-1">+ Click or drag to add more</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-3">
@@ -348,7 +348,7 @@ const Dashboard = () => {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground">{t("dragDrop")}</p>
-                    <p className="text-sm text-muted-foreground">{t("orClick")} (puedes seleccionar varios)</p>
+                    <p className="text-sm text-muted-foreground">{t("orClick")} (you can select multiple)</p>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">{t("supportedFormats")}</p>
                 </div>
@@ -358,7 +358,7 @@ const Dashboard = () => {
             {loading && (
               <div className="space-y-2 animate-fade-in">
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Analizando {processedCount}/{files.length}: {currentFileName}</span>
+                  <span>Analyzing {processedCount}/{files.length}: {currentFileName}</span>
                   <span>{Math.round(uploadProgress)}%</span>
                 </div>
 

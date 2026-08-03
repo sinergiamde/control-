@@ -45,7 +45,7 @@ const toNumber = (value: unknown) => {
 };
 
 const addCategory = (categories: Record<string, number>, name: string, amount: unknown) => {
-  const cleanName = String(name || "Sin categoría").trim();
+  const cleanName = String(name || "Uncategorized").trim();
   const cleanAmount = toNumber(amount);
   if (cleanAmount > 0) categories[cleanName] = (categories[cleanName] || 0) + cleanAmount;
 };
@@ -127,11 +127,11 @@ const History = () => {
   }, [rows]);
 
   const rangeLabel = useMemo(() => {
-    if (range === "all") return "Todos los años";
-    if (range === "last3") return "Último trimestre (3 meses)";
-    if (range === "last6") return "Últimos 6 meses";
-    if (range === previousYear) return `Año anterior (${range})`;
-    return `Año ${range}`;
+    if (range === "all") return "All years";
+    if (range === "last3") return "Last quarter (3 months)";
+    if (range === "last6") return "Last 6 months";
+    if (range === previousYear) return `Previous year (${range})`;
+    return `Year ${range}`;
   }, [range, previousYear]);
 
   useEffect(() => {
@@ -184,10 +184,10 @@ const History = () => {
     });
     // Fallback: if no detailed categories, use the 4 buckets
     if (Object.keys(categories).length === 0) {
-      if (t.cogs > 0) categories["COGS / Costo de ventas"] = t.cogs;
-      if (t.opex > 0) categories["Gastos operativos (OpEx)"] = t.opex;
-      if (t.personal > 0) categories["Gastos personales"] = t.personal;
-      if (t.fees > 0) categories["Comisiones / Fees"] = t.fees;
+      if (t.cogs > 0) categories["COGS / Cost of Goods Sold"] = t.cogs;
+      if (t.opex > 0) categories["Operating Expenses (OpEx)"] = t.opex;
+      if (t.personal > 0) categories["Personal Expenses"] = t.personal;
+      if (t.fees > 0) categories["Fees / Commissions"] = t.fees;
     }
     const sorted = Object.entries(categories).sort((a, b) => b[1] - a[1]);
     return { ...t, net: t.revenues - t.spent, categories: sorted };
@@ -212,7 +212,7 @@ const History = () => {
     } catch (err) {
       toast({
         title: "Error",
-        description: err instanceof Error ? err.message : "No se pudo generar el archivo.",
+        description: err instanceof Error ? err.message : "Could not generate the file.",
         variant: "destructive",
       });
     } finally {
@@ -226,7 +226,7 @@ const History = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Extracto eliminado", description: `${row.original_filename || row.period} fue eliminado.` });
+      toast({ title: "Statement deleted", description: `${row.original_filename || row.period} was deleted.` });
       setRows((prev) => prev.filter((r) => r.id !== row.id));
     }
     setDeleting(null);
@@ -248,23 +248,23 @@ const History = () => {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2">
               <HistoryIcon className="h-5 w-5 text-primary" />
-              Resumen ({filtered.length} extracto{filtered.length === 1 ? "" : "s"})
+              Summary ({filtered.length} statement{filtered.length === 1 ? "" : "s"})
             </CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
               <Select value={range} onValueChange={setRange}>
                 <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Período" />
+                  <SelectValue placeholder="Period" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos los años</SelectItem>
-                  <SelectItem value="last3">Último trimestre (3 meses)</SelectItem>
-                  <SelectItem value="last6">Últimos 6 meses</SelectItem>
+                  <SelectItem value="all">All years</SelectItem>
+                  <SelectItem value="last3">Last quarter (3 months)</SelectItem>
+                  <SelectItem value="last6">Last 6 months</SelectItem>
                   {!years.includes(previousYear) && (
-                    <SelectItem value={previousYear}>Año anterior ({previousYear})</SelectItem>
+                    <SelectItem value={previousYear}>Previous year ({previousYear})</SelectItem>
                   )}
                   {years.map((y) => (
                     <SelectItem key={y} value={y}>
-                      {y === previousYear ? `Año anterior (${y})` : `Año ${y}`}
+                      {y === previousYear ? `Previous year (${y})` : `Year ${y}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -273,7 +273,7 @@ const History = () => {
                 size="sm" variant="outline"
                 disabled={filtered.length === 0 || downloading}
                 onClick={() => handleDownload("excel")}
-                title={`Descargar Excel — ${rangeLabel}`}
+                title={`Download Excel — ${rangeLabel}`}
               >
                 {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 mr-1" />}
                 Excel ({rangeLabel})
@@ -282,7 +282,7 @@ const History = () => {
                 size="sm" variant="outline"
                 disabled={filtered.length === 0 || downloading}
                 onClick={() => handleDownload("pdf")}
-                title={`Descargar PDF — ${rangeLabel}`}
+                title={`Download PDF — ${rangeLabel}`}
               >
                 {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
                 PDF ({rangeLabel})
@@ -293,31 +293,31 @@ const History = () => {
             {annualSummary && (
               <div className="mb-4 flex items-center gap-2 text-xs rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-primary">
                 <CalendarCheck className="h-4 w-4 shrink-0" />
-                Resumen anual {range} generado automáticamente el {new Date(annualSummary.generated_at).toLocaleDateString("es-CO")} — listo para impuestos.
+                Annual summary {range} generated automatically on {new Date(annualSummary.generated_at).toLocaleDateString("en-US")} — ready for taxes.
               </div>
             )}
             {filtered.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
-                No tienes análisis para este período.
+                You have no analyses for this period.
               </p>
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div className="rounded-lg border p-4 bg-card">
                     <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                      <TrendingUp className="h-4 w-4 text-primary" /> Ingresos totales
+                      <TrendingUp className="h-4 w-4 text-primary" /> Total Income
                     </div>
                     <div className="text-2xl font-bold mt-1 text-primary">{fmt(totals.revenues)}</div>
                   </div>
                   <div className="rounded-lg border p-4 bg-card">
                     <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                      <TrendingDown className="h-4 w-4 text-destructive" /> Egresos totales
+                      <TrendingDown className="h-4 w-4 text-destructive" /> Total Expenses
                     </div>
                     <div className="text-2xl font-bold mt-1 text-destructive">{fmt(totals.spent)}</div>
                   </div>
                   <div className="rounded-lg border p-4 bg-card">
                     <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                      <Wallet className="h-4 w-4" /> Neto
+                      <Wallet className="h-4 w-4" /> Net
                     </div>
                     <div className={`text-2xl font-bold mt-1 ${totals.net >= 0 ? "text-primary" : "text-destructive"}`}>
                       {fmt(totals.net)}
@@ -325,14 +325,14 @@ const History = () => {
                   </div>
                 </div>
 
-                <h3 className="font-semibold mb-2">¿En qué se hizo el gasto?</h3>
+                <h3 className="font-semibold mb-2">What was the expense for?</h3>
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Categoría</TableHead>
-                        <TableHead className="text-right">Monto</TableHead>
-                        <TableHead className="text-right">% del gasto</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead className="text-right">% of expense</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -360,10 +360,10 @@ const History = () => {
                 <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-semibold text-destructive">
-                    Tienes {duplicatePeriodIds.groups.length} período(s) con más de un extracto guardado
+                    You have {duplicatePeriodIds.groups.length} period(s) with more than one statement saved
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    Revisa las filas marcadas abajo (mismo mes/año) y elimina el que no corresponda con el botón de basura, para que la contabilidad no se duplique.
+                    Review the rows marked below (same month/year) and delete the one that doesn't belong using the trash button, so your accounting doesn't get duplicated.
                   </p>
                   {duplicatePeriodIds.groups.map((g, i) => (
                     <p key={i} className="text-xs text-foreground">
@@ -378,30 +378,30 @@ const History = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Extractos del período</CardTitle>
+            <CardTitle>Statements for this period</CardTitle>
           </CardHeader>
           <CardContent>
             {filtered.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">Sin extractos.</p>
+              <p className="text-muted-foreground text-center py-8">No statements.</p>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Archivo</TableHead>
-                      <TableHead>Período</TableHead>
-                      <TableHead className="text-right">Ingresos</TableHead>
-                      <TableHead className="text-right">Egresos</TableHead>
-                      <TableHead>Top categoría</TableHead>
-                      <TableHead className="text-center">Acción</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>File</TableHead>
+                      <TableHead>Period</TableHead>
+                      <TableHead className="text-right">Income</TableHead>
+                      <TableHead className="text-right">Expenses</TableHead>
+                      <TableHead>Top category</TableHead>
+                      <TableHead className="text-center">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filtered.map((row) => (
                       <TableRow key={row.id} className={duplicatePeriodIds.ids.has(row.id) ? "bg-destructive/10" : ""}>
                         <TableCell>
-                          {new Date(row.created_at).toLocaleDateString("es-CO", {
+                          {new Date(row.created_at).toLocaleDateString("en-US", {
                             year: "numeric", month: "short", day: "numeric",
                           })}
                         </TableCell>
@@ -420,7 +420,7 @@ const History = () => {
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
                             <Button size="sm" variant="outline" onClick={() => viewDetail(row)}>
-                              <Eye className="h-4 w-4 mr-1" /> Ver
+                              <Eye className="h-4 w-4 mr-1" /> View
                             </Button>
                             <Button
                               size="sm" variant="ghost"

@@ -8,21 +8,35 @@ import { Button } from "@/components/ui/button";
 import {
   DollarSign, TrendingUp, Receipt, ArrowLeft, Download, ChevronDown,
   ChevronUp, AlertTriangle, BarChart3, PieChart, Wallet, CreditCard,
-  Building2, UtensilsCrossed, Car, ShoppingBag, Zap, Target, FileSpreadsheet, FileText
+  Building2, UtensilsCrossed, Car, ShoppingBag, Zap, Target, FileSpreadsheet, FileText,
+  CheckCircle2, Users,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
+import { reconcileStatement, normalizeBankSummary } from "@/utils/reconciliation";
+import {
+  FOOD_OPEX_CATEGORY,
+  PERSONAL_TRANSFER_CATEGORY,
+  PERSONAL_THIRD_PARTY_CATEGORIES,
+  type SectionKind,
+  type ThirdPartyPayment,
+  type ThirdPartyBuckets,
+  type BankSummary,
+  type ReconciliationResult,
+} from "@/utils/reportTypes";
 
 interface LineItem {
   name: string;
   amount: number;
   percentage: number;
   detail?: string;
+  category?: string;
 }
 
 interface Section {
   title: string;
+  kind?: SectionKind;
   icon: React.ElementType;
   items: LineItem[];
   total: number;
@@ -44,23 +58,38 @@ interface ResultsData {
   totalCOGS: number;
   grossProfit: number;
   totalOpex: number;
+  totalFood?: number;
   ebitda: number;
   totalPersonal: number;
   netIncome: number;
   sections: Section[];
   kpis: KPI[];
   redFlags?: string[];
-  thirdPartyPayments?: { method: string; identifier: string; date?: string; amt: number; category?: string }[];
+  thirdPartyPayments?: ThirdPartyPayment[];
+  thirdPartyBuckets?: ThirdPartyBuckets;
+  bankSummary?: BankSummary;
+  reconciliation?: ReconciliationResult;
 }
 
-const normalizeThirdParty = (items: any[] = []) =>
+const normalizeThirdParty = (items: any[] = []): ThirdPartyPayment[] =>
   (Array.isArray(items) ? items : []).map((p) => ({
     method: String(p?.method || ""),
+    direction: p?.direction === "incoming" ? "incoming" : "outgoing",
     identifier: String(p?.identifier || ""),
+    payee: p?.payee ? String(p.payee) : "",
     date: p?.date ? String(p.date) : "",
     amt: toNumber(p?.amt ?? p?.amount),
     category: p?.category ? String(p.category) : "",
+    classification: p?.classification ? String(p.classification) : "",
+    alert: p?.alert ? String(p.alert) : "",
   }));
+
+const buildThirdPartyBuckets = (thirdParty: ThirdPartyPayment[], personalTransfers: LineItem[]): ThirdPartyBuckets => ({
+  checks: thirdParty.filter((p) => p.method === "Check"),
+  zelleOutgoing: thirdParty.filter((p) => p.method === "Zelle" && p.direction === "outgoing"),
+  zelleIncoming: thirdParty.filter((p) => p.method === "Zelle" && p.direction === "incoming"),
+  personalTransfers,
+});
 
 const AnimatedNumber = ({ value, prefix = "$", delay = 0 }: { value: number; prefix?: string; delay?: number }) => {
   const [display, setDisplay] = useState(0);
@@ -131,7 +160,14 @@ const CollapsibleSection = ({ section, index }: { section: Section; index: numbe
               <div key={i} className="flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors group/item">
                 <div className="flex-1 min-w-0 pr-4">
                   <p className="text-sm text-foreground truncate">{item.name}</p>
-                  {item.detail && <p className="text-xs text-muted-foreground truncate mt-0.5">{item.detail}</p>}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {item.category && (
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80 bg-muted px-1.5 py-0.5 rounded shrink-0">
+                        {item.category}
+                      </span>
+                    )}
+                    {item.detail && <p className="text-xs text-muted-foreground truncate">{item.detail}</p>}
+                  </div>
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
                   <span className="text-xs text-muted-foreground w-12 text-right">{item.percentage.toFixed(1)}%</span>
@@ -204,6 +240,7 @@ const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number): LineIt
       amount,
       percentage: toPercent(amount, totalRevenue),
       detail: detailParts.length > 0 ? detailParts.join(" • ") : undefined,
+      category: item?.category ? String(item.category) : undefined,
     };
   });
 
@@ -260,23 +297,75 @@ const transformAPIResponse = (raw: any): ResultsData => {
   ) {
     const revenues = Array.isArray(source?.revenues) ? source.revenues : [];
     const cogs = Array.isArray(source?.cogs) ? source.cogs : [];
-    const operatingExpenses = [
-      ...(Array.isArray(source?.opex) ? source.opex : []),
-      ...(Array.isArray(source?.fees) ? source.fees : []),
-    ];
+    const rawOpex = Array.isArray(source?.opex) ? source.opex : [];
+    const fees = Array.isArray(source?.fees) ? source.fees : [];
     const personal = Array.isArray(source?.personal) ? source.personal : [];
+
+    const foodItems = rawOpex.filter((item: any) => item?.category === FOOD_OPEX_CATEGORY);
+    const opexWithoutFood = rawOpex.filter((item: any) => item?.category !== FOOD_OPEX_CATEGORY);
+    const operatingExpenses = [...opexWithoutFood, ...fees];
 
     const totalRevenue = sumAnalysisItems(revenues);
     const totalCOGS = sumAnalysisItems(cogs);
     const totalOpex = sumAnalysisItems(operatingExpenses);
+    const totalFood = sumAnalysisItems(foodItems);
     const totalPersonal = sumAnalysisItems(personal);
     const grossProfit = totalRevenue - totalCOGS;
-    const ebitda = grossProfit - totalOpex;
+    const ebitda = grossProfit - totalOpex - totalFood;
     const netIncome = ebitda - totalPersonal;
 
-    const sections: Section[] = [
+    const insights = Array.isArray(source?.insights) ? source.insights : [];
+
+    const thirdPartyPayments = normalizeThirdParty(source?.thirdPartyPayments);
+    const personalTransfers = normalizeAnalysisItems(
+      personal.filter((item: any) => item?.category === PERSONAL_TRANSFER_CATEGORY),
+      totalRevenue
+    );
+    const bankSummary = normalizeBankSummary(source?.bankSummary);
+    const reconciliation = reconcileStatement(source);
+    const thirdPartyBuckets = buildThirdPartyBuckets(thirdPartyPayments, personalTransfers);
+
+    // Checks/Zelle/transfers already get their own itemized breakdown in the Third Party Payments
+    // section below — pull them out of the Personal item list so the same transaction isn't listed
+    // twice. totalPersonal (and therefore Net Income) is untouched: we roll the moved amount back in
+    // as a single reference line so the section's own subtotal still adds up.
+    const personalDisplayItems = personal.filter(
+      (item: any) => !(PERSONAL_THIRD_PARTY_CATEGORIES as readonly string[]).includes(item?.category)
+    );
+    const movedPersonalTotal = sumAnalysisItems(personal) - sumAnalysisItems(personalDisplayItems);
+    const personalSectionItems = normalizeAnalysisItems(personalDisplayItems, totalRevenue);
+    if (movedPersonalTotal > 0) {
+      personalSectionItems.push({
+        name: "Personal transfers & Zelle to family (see Third Party Payments tab)",
+        amount: movedPersonalTotal,
+        percentage: toPercent(movedPersonalTotal, totalRevenue),
+        detail: "Included in Total Personal above — itemized separately for 1099 tracking",
+      });
+    }
+
+    const thirdPartyLineItems: LineItem[] = [
+      ...thirdPartyBuckets.checks.map((p) => ({
+        name: `Check #${p.identifier || "?"} — ${p.payee || "Payee not shown"}`,
+        amount: p.amt,
+        percentage: toPercent(p.amt, totalRevenue),
+        detail: [p.date, p.classification].filter(Boolean).join(" • "),
+        category: p.category,
+      })),
+      ...[...thirdPartyBuckets.zelleOutgoing, ...thirdPartyBuckets.zelleIncoming].map((p) => ({
+        name: `Zelle ${p.direction === "incoming" ? "from" : "to"} ${p.identifier || "Unknown"}`,
+        amount: p.amt,
+        percentage: toPercent(p.amt, totalRevenue),
+        detail: [p.date, p.classification, p.alert].filter(Boolean).join(" • "),
+        category: p.category,
+      })),
+      ...thirdPartyBuckets.personalTransfers,
+    ];
+    const totalThirdParty = thirdPartyLineItems.reduce((sum, item) => sum + item.amount, 0);
+
+    const allSections: Section[] = [
       {
         title: "Revenue",
+        kind: "revenue",
         icon: DollarSign,
         items: normalizeAnalysisItems(revenues, totalRevenue),
         total: totalRevenue,
@@ -285,6 +374,7 @@ const transformAPIResponse = (raw: any): ResultsData => {
       },
       {
         title: "COGS",
+        kind: "cogs",
         icon: Building2,
         items: normalizeAnalysisItems(cogs, totalRevenue),
         total: totalCOGS,
@@ -293,6 +383,7 @@ const transformAPIResponse = (raw: any): ResultsData => {
       },
       {
         title: "Operating Expenses & Fees",
+        kind: "opex",
         icon: CreditCard,
         items: normalizeAnalysisItems(operatingExpenses, totalRevenue),
         total: totalOpex,
@@ -300,16 +391,34 @@ const transformAPIResponse = (raw: any): ResultsData => {
         color: sectionColors[2],
       },
       {
-        title: "Personal / Non-Deductible",
+        title: "Food / Alimentación (Work Meals)",
+        kind: "food",
+        icon: UtensilsCrossed,
+        items: normalizeAnalysisItems(foodItems, totalRevenue),
+        total: totalFood,
+        totalLabel: "Total Alimentación",
+        color: sectionColors[4],
+      },
+      {
+        title: "Other Expenses/Possible Deductions",
+        kind: "personal",
         icon: ShoppingBag,
-        items: normalizeAnalysisItems(personal, totalRevenue),
+        items: personalSectionItems,
         total: totalPersonal,
         totalLabel: "Total Personal",
         color: sectionColors[3],
       },
-    ].filter((section) => section.items.length > 0 || section.total !== 0);
-
-    const insights = Array.isArray(source?.insights) ? source.insights : [];
+      {
+        title: "Third Party Payments",
+        kind: "thirdParty",
+        icon: Users,
+        items: thirdPartyLineItems,
+        total: totalThirdParty,
+        totalLabel: "Total Third Party Payments",
+        color: sectionColors[5],
+      },
+    ];
+    const sections = allSections.filter((section) => section.items.length > 0 || section.total !== 0);
 
     return {
       companyName: source.company || source.companyName || source.company_name || "",
@@ -318,6 +427,7 @@ const transformAPIResponse = (raw: any): ResultsData => {
       totalCOGS,
       grossProfit,
       totalOpex,
+      totalFood,
       ebitda,
       totalPersonal,
       netIncome,
@@ -348,8 +458,11 @@ const transformAPIResponse = (raw: any): ResultsData => {
           color: sectionColors[3],
         },
       ],
-      redFlags: source.alerts || source.redFlags || source.red_flags || [],
-      thirdPartyPayments: normalizeThirdParty(source?.thirdPartyPayments),
+      redFlags: [...reconciliation.discrepancies, ...(source.alerts || source.redFlags || source.red_flags || [])],
+      thirdPartyPayments,
+      thirdPartyBuckets,
+      bankSummary,
+      reconciliation,
     };
   }
 
@@ -406,9 +519,9 @@ const Results = () => {
           <Card className="neon-border bg-card max-w-md w-full">
             <CardContent className="p-8 text-center">
               <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
-              <h2 className="text-xl font-bold text-foreground mb-2">No hay datos para mostrar</h2>
+              <h2 className="text-xl font-bold text-foreground mb-2">No data to display</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                Sube un documento desde el Dashboard para generar tu reporte P&L.
+                Upload a document from the Dashboard to generate your P&L report.
               </p>
               <Button onClick={() => navigate("/dashboard")} className="neon-glow">
                 <ArrowLeft className="h-4 w-4 mr-2" />
@@ -432,7 +545,7 @@ const Results = () => {
   };
 
   const summaryCards = [
-    { label: t("totalSpent"), value: results.totalRevenue, icon: DollarSign, color: "hsl(96, 100%, 50%)", sub: "Revenue" },
+    { label: "Total Income", value: results.totalRevenue, icon: DollarSign, color: "hsl(96, 100%, 50%)", sub: "100%" },
     { label: "COGS", value: results.totalCOGS, icon: Building2, color: "hsl(38, 90%, 55%)", sub: `${((results.totalCOGS / results.totalRevenue) * 100).toFixed(1)}%` },
     { label: "Gross Profit", value: results.grossProfit, icon: TrendingUp, color: "hsl(96, 100%, 50%)", sub: `${((results.grossProfit / results.totalRevenue) * 100).toFixed(1)}%` },
     { label: "EBITDA", value: results.ebitda, icon: BarChart3, color: "hsl(210, 60%, 50%)", sub: `${((results.ebitda / results.totalRevenue) * 100).toFixed(1)}%` },
@@ -475,6 +588,28 @@ const Results = () => {
           </div>
         </div>
 
+        {results.reconciliation?.bankSummaryFound && (
+          <div
+            className={`mb-6 flex items-start gap-2 text-sm rounded-lg border px-3 py-2 opacity-0 animate-fade-in ${
+              results.reconciliation.ok
+                ? "border-primary/30 bg-primary/5 text-primary"
+                : "border-destructive/50 bg-destructive/5 text-destructive"
+            }`}
+            style={{ animationDelay: "0.3s" }}
+          >
+            {results.reconciliation.ok ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            )}
+            <span>
+              {results.reconciliation.ok
+                ? "Reconciled — the classified totals match the bank's own printed summary."
+                : `${results.reconciliation.discrepancies.length} discrepancy(ies) detected against the bank summary — review Alerts & Red Flags.`}
+            </span>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
           {summaryCards.map((card, i) => (
             <Card key={card.label}
@@ -499,7 +634,7 @@ const Results = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-foreground flex items-center gap-2 text-base">
               <PieChart className="h-5 w-5 text-primary" />
-              Flujo Financiero
+              Financial Flow
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -541,7 +676,7 @@ const Results = () => {
 
         <div className="space-y-3 mb-8">
           <h2 className="text-lg font-bold text-foreground mb-4 opacity-0 animate-fade-in" style={{ animationDelay: "0.5s" }}>
-            Desglose Detallado
+            Detailed Breakdown
           </h2>
           {results.sections.map((section, i) => (
             <CollapsibleSection key={section.title} section={section} index={i} />
@@ -552,7 +687,7 @@ const Results = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-foreground flex items-center gap-2 text-base">
               <Target className="h-5 w-5 text-primary" />
-              Indicadores Clave (KPIs)
+              Key Indicators (KPIs)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -576,7 +711,7 @@ const Results = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-destructive flex items-center gap-2 text-base">
                 <AlertTriangle className="h-5 w-5" />
-                Alertas y Red Flags
+                Alerts & Red Flags
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -597,7 +732,7 @@ const Results = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-primary" />
-                Resumen Anual {(results as any).annualYear || ""}
+                Annual Summary {(results as any).annualYear || ""}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -605,10 +740,10 @@ const Results = () => {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-muted-foreground border-b border-border">
-                      <th className="py-2 pr-4 font-medium">Mes</th>
-                      <th className="py-2 pr-4 font-medium text-right">Ingresos</th>
-                      <th className="py-2 pr-4 font-medium text-right">Gastos</th>
-                      <th className="py-2 font-medium text-right">Neto</th>
+                      <th className="py-2 pr-4 font-medium">Month</th>
+                      <th className="py-2 pr-4 font-medium text-right">Income</th>
+                      <th className="py-2 pr-4 font-medium text-right">Expenses</th>
+                      <th className="py-2 font-medium text-right">Net</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -636,7 +771,7 @@ const Results = () => {
         )}
 
         <p className="text-xs text-muted-foreground text-center pb-8 opacity-0 animate-fade-in" style={{ animationDelay: "1s" }}>
-          P&L basado en movimientos bancarios — no incluye CxC/CxP pendientes. Preparar estados formales con CPA para fines IRS.
+          P&L based on bank transactions — does not include pending A/R or A/P. Prepare formal financial statements with a CPA for IRS purposes.
         </p>
       </div>
       <ChatBot />
