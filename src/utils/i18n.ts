@@ -190,7 +190,7 @@ export const STR = {
     en: "P&L based on bank transactions — does not include pending A/R or A/P. Prepare formal financial statements with a CPA for IRS purposes.",
     es: "P&L basado en movimientos bancarios — no incluye CxC/CxP pendientes. Preparar estados formales con CPA para fines IRS.",
   },
-  preparedBy: { en: "Prepared by CTRL+ by TaxForYou | www.taxforyou.com", es: "Prepared by CTRL+ by TaxForYou | www.taxforyou.com" },
+  preparedBy: { en: "Prepared by CTRL+ by TaxForYou | www.taxforyou.com", es: "Preparado por CTRL+ by TaxForYou | www.taxforyou.com" },
 
   // Personal transfer rollup line (Results.tsx / consolidateReport.ts)
   movedPersonalName: {

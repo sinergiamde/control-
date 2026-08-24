@@ -14,7 +14,7 @@ import { buildConsolidatedReport } from "@/utils/consolidateReport";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
 import { normalizePeriod } from "@/utils/normalizePeriod";
-import { STR, tr, translateCategory } from "@/utils/i18n";
+import { STR, tr, translateCategory, pickText } from "@/utils/i18n";
 
 interface AnalysisRow {
   id: string;
@@ -75,6 +75,15 @@ const collectCategories = (analysis: any, categories: Record<string, number>, is
   if (Array.isArray(source?.expenses_by_category)) {
     source.expenses_by_category.forEach((item: any) => addCategory(categories, item?.category || item?.name, item?.amount ?? item?.total, isEnglish));
   }
+};
+
+/** The DB "period" column stores a single, language-neutral value (used for grouping/dedup). For
+ * display, prefer the bilingual period_en/period_es the AI writes into full_analysis so the shown
+ * text follows the language toggle like the rest of the report; fall back to the raw column for
+ * analyses saved before that existed. */
+const displayPeriod = (row: AnalysisRow, isEnglish: boolean) => {
+  const source = row.full_analysis?.analysis ?? row.full_analysis;
+  return pickText(source, "period", isEnglish) || row.period || "";
 };
 
 const getStatementYear = (row: AnalysisRow) => {
@@ -369,7 +378,7 @@ const History = () => {
                   </p>
                   {duplicatePeriodIds.groups.map((g, i) => (
                     <p key={i} className="text-xs text-foreground">
-                      • {g[0].period || "—"}: {g.map((r) => r.original_filename || r.company || r.id.slice(0, 6)).join(", ")}
+                      • {displayPeriod(g[0], isEnglish) || "—"}: {g.map((r) => r.original_filename || r.company || r.id.slice(0, 6)).join(", ")}
                     </p>
                   ))}
                 </div>
@@ -414,7 +423,7 @@ const History = () => {
                           {duplicatePeriodIds.ids.has(row.id) && (
                             <AlertTriangle className="h-3.5 w-3.5 text-destructive inline mr-1" />
                           )}
-                          {row.period || "—"}
+                          {displayPeriod(row, isEnglish) || "—"}
                         </TableCell>
                         <TableCell className="text-right text-primary">{fmt(row.revenues_total)}</TableCell>
                         <TableCell className="text-right text-destructive">{fmt(row.total_spent)}</TableCell>

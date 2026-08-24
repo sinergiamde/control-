@@ -270,7 +270,7 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
 
     return {
       companyName: source.companyName || source.company_name || source.company || "",
-      period: source.period || "",
+      period: pickText(source, "period", isEnglish),
       totalRevenue: toNumber(source.totalRevenue ?? source.total_revenue),
       totalCOGS: toNumber(source.totalCOGS ?? source.total_cogs),
       grossProfit: toNumber(source.grossProfit ?? source.gross_profit),
@@ -425,7 +425,7 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
 
     return {
       companyName: source.company || source.companyName || source.company_name || "",
-      period: source.period || "",
+      period: pickText(source, "period", isEnglish),
       totalRevenue,
       totalCOGS,
       grossProfit,
@@ -480,7 +480,7 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
 
   return {
     companyName: source?.company_name || source?.companyName || source?.company || "",
-    period: source?.period || "",
+    period: pickText(source, "period", isEnglish),
     totalRevenue: totalSpent,
     totalCOGS: 0,
     grossProfit: totalSpent,

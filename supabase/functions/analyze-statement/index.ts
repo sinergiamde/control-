@@ -13,7 +13,7 @@ const buildSystemPrompt = () => {
 
 Tu objetivo es convertir el extracto bancario adjunto en datos financieros clasificados, listos para contabilidad y declaración de impuestos.
 
-IDIOMA DE SALIDA: la aplicación permite ver cada reporte en inglés o en español, así que TODO campo de texto libre debe generarse en AMBOS idiomas a la vez, en dos campos paralelos con sufijo "_en" y "_es" (ej. "detail_en" y "detail_es", "insights_en" e "insights_es", "alerts_en" y "alerts_es", "classification_en"/"classification_es", "alert_en"/"alert_es" en thirdPartyPayments). Ambas versiones deben decir exactamente lo mismo, solo cambia el idioma — "_en" en inglés americano (American English), "_es" en español latinoamericano neutro (sin modismos de España). El campo "category" es la ÚNICA excepción — SIEMPRE debe quedar exactamente en inglés, tal cual aparece en las listas de abajo, sin traducir, en un solo campo (no lleva _en/_es), sin importar lo anterior (esto es necesario para que los subtotales por categoría sean consistentes entre extractos, sin importar el idioma en que se subieron).
+IDIOMA DE SALIDA: la aplicación permite ver cada reporte en inglés o en español, así que TODO campo de texto libre debe generarse en AMBOS idiomas a la vez, en dos campos paralelos con sufijo "_en" y "_es" (ej. "detail_en" y "detail_es", "insights_en" e "insights_es", "alerts_en" y "alerts_es", "classification_en"/"classification_es", "alert_en"/"alert_es" en thirdPartyPayments, "period_en"/"period_es"). Ambas versiones deben decir exactamente lo mismo, solo cambia el idioma — "_en" en inglés americano (American English), "_es" en español latinoamericano neutro (sin modismos de España). El campo "category" es la ÚNICA excepción — SIEMPRE debe quedar exactamente en inglés, tal cual aparece en las listas de abajo, sin traducir, en un solo campo (no lleva _en/_es), sin importar lo anterior (esto es necesario para que los subtotales por categoría sean consistentes entre extractos, sin importar el idioma en que se subieron).
 
 PASO 1 — DETECTA la industria del negocio (Construcción/Drywall/Remodelación, Transporte/Trucking, Servicios de limpieza, Retail/Reventa, Servicios profesionales, u "Negocio General" si no está claro) según los proveedores y patrones de transacciones. Ajusta la clasificación de gastos según esa industria.
 
@@ -119,7 +119,8 @@ REGLAS OBLIGATORIAS:
 - El campo "date" usa el formato del extracto tal cual aparece (o vacío si no es legible).
 - El campo "category" debe ser EXACTAMENTE una de las etiquetas listadas arriba para esa sección — esto es crítico para que los subtotales anuales por categoría sean consistentes entre meses.
 - Los campos "detail_en" y "detail_es" son OPCIONALES y deben ser muy breves (máx. 6 palabras, ej. nombre del comercio). Si no aportan nada útil, déjalos como cadena vacía "" en ambos — no rellenes con texto innecesario.
-- "period" es el rango de fechas del extracto tal como aparece (ej. "Enero 2026" o "01/01/2026 - 01/31/2026").
+- "period" es el rango de fechas del extracto tal como aparece (ej. "Enero 2026" o "01/01/2026 - 01/31/2026") — este campo es interno (para agrupar extractos), no se le muestra al usuario, así que no necesita traducción.
+- "period_en" y "period_es" SÍ se le muestran al usuario, así que deben ser una versión legible del mismo rango de fechas, redactada en cada idioma con el nombre del mes escrito (nunca uses nombres de mes en inglés en "period_es" ni viceversa) — ej. si el extracto cubre del 1 al 28 de febrero de 2025: "period_en"="February 1, 2025 through February 28, 2025", "period_es"="1 de febrero de 2025 al 28 de febrero de 2025". Si el extracto solo trae un mes/año sin días exactos, usa igual el formato largo en cada idioma (ej. "period_en"="February 2025", "period_es"="Febrero 2025").
 - "company" es el nombre del titular de la cuenta o negocio si aparece en el extracto; si no aparece, usa cadena vacía.`;
 };
 
@@ -214,6 +215,8 @@ const RESULT_SCHEMA = {
   properties: {
     company: { type: "string" },
     period: { type: "string" },
+    period_en: { type: "string" },
+    period_es: { type: "string" },
     industry: { type: "string" },
     annualYear: { type: "string" },
     revenues: { type: "array", items: lineItemSchema },
@@ -230,7 +233,7 @@ const RESULT_SCHEMA = {
     annualSummary: { type: "array", items: monthSchema },
   },
   required: [
-    "company", "period", "industry", "annualYear",
+    "company", "period", "period_en", "period_es", "industry", "annualYear",
     "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments", "bankSummary",
     "insights_en", "insights_es", "alerts_en", "alerts_es", "annualSummary",
   ],

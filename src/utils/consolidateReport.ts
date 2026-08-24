@@ -50,7 +50,7 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
 
   for (const data of allData) {
     const src = getAnalysisSource(data);
-    const period = src?.period ? String(src.period) : "";
+    const period = pickText(src, "period", isEnglish);
 
     addToCategoryMap(revenueMap, src?.revenues, isEnglish);
     addToCategoryMap(cogsMap, src?.cogs, isEnglish);
