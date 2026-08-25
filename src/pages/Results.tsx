@@ -80,7 +80,7 @@ const normalizeThirdParty = (items: any[] = [], isEnglish = true): ThirdPartyPay
     payee: p?.payee ? String(p.payee) : "",
     date: p?.date ? String(p.date) : "",
     amt: toNumber(p?.amt ?? p?.amount),
-    category: p?.category ? String(p.category) : "",
+    category: p?.category ? translateCategory(String(p.category), isEnglish) : "",
     classification: pickText(p, "classification", isEnglish),
     alert: pickText(p, "alert", isEnglish),
   }));
