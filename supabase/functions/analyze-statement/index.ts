@@ -197,11 +197,11 @@ const bankSummarySchema = {
     found: { type: "boolean" },
     beginningBalance: { type: "number" },
     endingBalance: { type: "number" },
-    deposits: bankSummaryFieldSchema,
-    checksPaid: bankSummaryFieldSchema,
-    atmDebitWithdrawals: bankSummaryFieldSchema,
-    electronicWithdrawals: bankSummaryFieldSchema,
-    otherWithdrawals: bankSummaryFieldSchema,
+    deposits: { $ref: "#/$defs/bankSummaryField" },
+    checksPaid: { $ref: "#/$defs/bankSummaryField" },
+    atmDebitWithdrawals: { $ref: "#/$defs/bankSummaryField" },
+    electronicWithdrawals: { $ref: "#/$defs/bankSummaryField" },
+    otherWithdrawals: { $ref: "#/$defs/bankSummaryField" },
   },
   required: [
     "found", "beginningBalance", "endingBalance",
@@ -210,8 +210,21 @@ const bankSummarySchema = {
   additionalProperties: false,
 };
 
+// lineItemSchema/thirdPartyPaymentSchema/etc. are each reused across several array fields below
+// (revenues/cogs/opex/fees/personal all share lineItemSchema, bankSummarySchema reuses
+// bankSummaryFieldSchema 5x). Inlining the same object literally that many times bloats the JSON
+// sent to the model enough to hit Claude's "compiled grammar is too large" limit for structured
+// outputs — so every field that reuses a schema points at a single $defs entry via $ref instead of
+// embedding a fresh copy each time.
 const RESULT_SCHEMA = {
   type: "object",
+  $defs: {
+    lineItem: lineItemSchema,
+    thirdPartyPayment: thirdPartyPaymentSchema,
+    bankSummaryField: bankSummaryFieldSchema,
+    bankSummary: bankSummarySchema,
+    month: monthSchema,
+  },
   properties: {
     company: { type: "string" },
     period: { type: "string" },
@@ -219,18 +232,18 @@ const RESULT_SCHEMA = {
     period_es: { type: "string" },
     industry: { type: "string" },
     annualYear: { type: "string" },
-    revenues: { type: "array", items: lineItemSchema },
-    cogs: { type: "array", items: lineItemSchema },
-    opex: { type: "array", items: lineItemSchema },
-    fees: { type: "array", items: lineItemSchema },
-    personal: { type: "array", items: lineItemSchema },
-    thirdPartyPayments: { type: "array", items: thirdPartyPaymentSchema },
-    bankSummary: bankSummarySchema,
+    revenues: { type: "array", items: { $ref: "#/$defs/lineItem" } },
+    cogs: { type: "array", items: { $ref: "#/$defs/lineItem" } },
+    opex: { type: "array", items: { $ref: "#/$defs/lineItem" } },
+    fees: { type: "array", items: { $ref: "#/$defs/lineItem" } },
+    personal: { type: "array", items: { $ref: "#/$defs/lineItem" } },
+    thirdPartyPayments: { type: "array", items: { $ref: "#/$defs/thirdPartyPayment" } },
+    bankSummary: { $ref: "#/$defs/bankSummary" },
     insights_en: { type: "array", items: { type: "string" } },
     insights_es: { type: "array", items: { type: "string" } },
     alerts_en: { type: "array", items: { type: "string" } },
     alerts_es: { type: "array", items: { type: "string" } },
-    annualSummary: { type: "array", items: monthSchema },
+    annualSummary: { type: "array", items: { $ref: "#/$defs/month" } },
   },
   required: [
     "company", "period", "period_en", "period_es", "industry", "annualYear",
