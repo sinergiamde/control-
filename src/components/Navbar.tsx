@@ -1,7 +1,7 @@
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, Globe, ShieldCheck, LayoutDashboard, History } from "lucide-react";
+import { LogOut, ShieldCheck, LayoutDashboard, History } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 const Navbar = () => {
@@ -30,13 +30,33 @@ const Navbar = () => {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        <button
-          onClick={() => setLang(lang === "en" ? "es" : "en")}
-          className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-all duration-200 text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-muted hover:scale-105"
-        >
-          <Globe className="h-4 w-4" />
-          {lang === "en" ? "ES" : "EN"}
-        </button>
+        {/* Two always-visible flag buttons (current language highlighted) instead of a single
+            "switch to X" toggle — a toggle that shows the target language's label reads, to a
+            non-technical eye, like it's naming the language you're currently in. */}
+        <div className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5" role="group" aria-label="Language / Idioma">
+          <button
+            type="button"
+            onClick={() => setLang("en")}
+            aria-pressed={lang === "en"}
+            title="English"
+            className={`flex items-center gap-1 text-sm font-medium px-2 py-1 rounded-md transition-all duration-200 ${
+              lang === "en" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <span className="text-base leading-none">🇺🇸</span> EN
+          </button>
+          <button
+            type="button"
+            onClick={() => setLang("es")}
+            aria-pressed={lang === "es"}
+            title="Español"
+            className={`flex items-center gap-1 text-sm font-medium px-2 py-1 rounded-md transition-all duration-200 ${
+              lang === "es" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <span className="text-base leading-none">🇨🇴</span> ES
+          </button>
+        </div>
 
         {user && (
           <>

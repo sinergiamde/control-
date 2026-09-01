@@ -109,6 +109,15 @@ export const STR = {
     en: "Checks, Zelle and personal transfers — itemized one by one",
     es: "Cheques, Zelle y transferencias personales — uno por uno",
   },
+  thirdPartyInfoNote: {
+    en: "Informational only, for 1099 determination — grouped by payee so you can see what each person was paid. These amounts are already counted in Revenue/COGS/OpEx/Personal earlier in this report; do not add them again.",
+    es: "Solo informativo, para determinar 1099 — agrupado por beneficiario para ver cuánto se le pagó a cada persona. Estos montos ya están contados en Ingresos/COGS/OpEx/Personal más arriba en este reporte; no se deben volver a sumar.",
+  },
+  seeThirdPartyNote: {
+    en: "Third Party Payments (next page) breaks down what was paid to each person/vendor — informational only, for 1099 purposes. It is not an additional total.",
+    es: "Pagos a Terceros (página siguiente) desglosa cuánto se le pagó a cada persona/proveedor — solo informativo, para fines de 1099. No es un total adicional.",
+  },
+  totalPaidToPrefix: { en: "Total paid to", es: "Total pagado a" },
 
   // Total labels
   totalRevenue: { en: "Total Revenue", es: "Total Ingresos" },
@@ -277,6 +286,15 @@ export const STR = {
   annualSummaryPrefix: { en: "Annual summary", es: "Resumen anual" },
   generatedOn: { en: "generated automatically on", es: "generado automáticamente el" },
   readyForTaxes: { en: "— ready for taxes.", es: "— listo para impuestos." },
+  noAnnualSummaryYet: {
+    en: "No annual summary generated yet for this year — the totals above are still accurate (calculated live from your statements); this just builds the saved, ready-for-taxes snapshot.",
+    es: "Aún no se ha generado el resumen anual de este año — los totales de arriba siguen siendo correctos (se calculan al momento desde tus extractos); esto solo guarda la versión lista para impuestos.",
+  },
+  generateAnnualSummary: { en: "Generate annual summary", es: "Generar resumen anual" },
+  regenerateAnnualSummary: { en: "Regenerate", es: "Regenerar" },
+  generatingAnnualSummary: { en: "Generating…", es: "Generando…" },
+  annualSummaryGenerated: { en: "Annual summary generated", es: "Resumen anual generado" },
+  couldNotGenerateAnnualSummary: { en: "Could not generate the annual summary.", es: "No se pudo generar el resumen anual." },
   noAnalysesPeriod: { en: "You have no analyses for this period.", es: "No tienes análisis para este período." },
   totalExpensesLabel: { en: "Total Expenses", es: "Egresos Totales" },
   whatWasExpenseFor: { en: "What was the expense for?", es: "¿En qué se hizo el gasto?" },
@@ -301,4 +319,31 @@ export const STR = {
   opexFallback: { en: "Operating Expenses (OpEx)", es: "Gastos Operativos (OpEx)" },
   personalFallback: { en: "Personal Expenses", es: "Gastos Personales" },
   feesFallback: { en: "Fees / Commissions", es: "Comisiones / Fees" },
+  // Client picker (Dashboard upload + History filter)
+  clientLabel: { en: "Client", es: "Cliente" },
+  clientPickerPlaceholder: { en: "Select or create a client…", es: "Selecciona o crea un cliente…" },
+  clientSearchPlaceholder: { en: "Search or type a new client name…", es: "Busca o escribe un cliente nuevo…" },
+  clientEmptyLabel: { en: "No clients found.", es: "No se encontraron clientes." },
+  clientCreatePrefix: { en: "Create", es: "Crear" },
+  clientRequiredHint: {
+    en: "Select or create the client this statement belongs to, so it doesn't get mixed in with other clients' statements.",
+    es: "Selecciona o crea el cliente al que pertenece este extracto, para que no se mezcle con los extractos de otros clientes.",
+  },
+  clientFilterAllLabel: { en: "All clients", es: "Todos los clientes" },
+  clientColumnLabel: { en: "Client", es: "Cliente" },
+  noClientLabel: { en: "No client", es: "Sin cliente" },
+  // Transaction re-assignment ("this was actually a payment to Luisa, a contractor")
+  reassignAction: { en: "Reassign", es: "Reasignar" },
+  reassignDialogTitle: { en: "Reassign transaction", es: "Reasignar transacción" },
+  reassignDialogDesc: {
+    en: "Move this transaction to the category it actually belongs to. Totals and reports update immediately.",
+    es: "Mueve esta transacción a la categoría a la que realmente pertenece. Los totales y reportes se actualizan de inmediato.",
+  },
+  reassignCategoryLabel: { en: "New category", es: "Nueva categoría" },
+  reassignSave: { en: "Save", es: "Guardar" },
+  reassignSaving: { en: "Saving…", es: "Guardando…" },
+  reassignCancel: { en: "Cancel", es: "Cancelar" },
+  reassignSuccess: { en: "Transaction reassigned.", es: "Transacción reasignada." },
+  reassignError: { en: "Could not reassign the transaction.", es: "No se pudo reasignar la transacción." },
+  reassignSameCategory: { en: "Choose a different category to move it.", es: "Elige una categoría distinta para moverla." },
 } satisfies Record<string, Bilingual>;

@@ -3,6 +3,7 @@ import { saveAs } from "file-saver";
 import { totalBankWithdrawals } from "./reconciliation";
 import { STR, tr } from "./i18n";
 import type { LineItem, ResultsData, Section, SectionKind, ThirdPartyPayment } from "./reportTypes";
+import { groupThirdPartyByPayee } from "./reportTypes";
 
 const COLORS = {
   headerBg: "0D1B2A",
@@ -211,6 +212,11 @@ function addThirdPartySheet(wb: ExcelJS.Workbook, data: ResultsData, isEnglish: 
   writeTitleBar(ws, r, `${tr(STR.thirdPartyPayments, isEnglish)} (${tr(STR.thirdPartyPaymentsSubtitle1099, isEnglish)})`, 6);
   r++;
   writeSubtitleBar(ws, r, `${data.period || ""} | ${tr(STR.thirdPartyPaymentsSubtitleDetail, isEnglish)}`, 6);
+  r++;
+  ws.mergeCells(r, 1, r, 6);
+  ws.getCell(r, 1).value = tr(STR.thirdPartyInfoNote, isEnglish);
+  styleRow(ws, r, COLORS.altRow2, COLORS.detailFont, false, 9, 6);
+  ws.getRow(r).height = 28;
   r += 2;
 
   const buckets = data.thirdPartyBuckets;
@@ -232,22 +238,33 @@ function addThirdPartySheet(wb: ExcelJS.Workbook, data: ResultsData, isEnglish: 
   r++;
 
   const checks = buckets?.checks || [];
-  const checksStartRow = r;
-  checks.forEach((p, i) => {
-    const bg = i % 2 === 0 ? COLORS.altRow2 : COLORS.altRow1;
-    ws.getCell(r, 1).value = p.identifier;
-    ws.getCell(r, 2).value = p.payee || tr(STR.verifyNoPayee, isEnglish);
-    ws.getCell(r, 3).value = p.date || "";
-    ws.getCell(r, 4).value = p.amt;
+  const checkGroups = groupThirdPartyByPayee(checks, tr(STR.verifyNoPayee, isEnglish));
+  let rowParity = 0;
+  checkGroups.forEach((group) => {
+    group.rows.forEach((p) => {
+      const bg = rowParity % 2 === 0 ? COLORS.altRow2 : COLORS.altRow1;
+      ws.getCell(r, 1).value = p.identifier;
+      ws.getCell(r, 2).value = p.payee || tr(STR.verifyNoPayee, isEnglish);
+      ws.getCell(r, 3).value = p.date || "";
+      ws.getCell(r, 4).value = p.amt;
+      ws.getCell(r, 4).numFmt = "#,##0.00";
+      ws.getCell(r, 5).value = p.category || "";
+      ws.getCell(r, 6).value = p.classification || "";
+      styleRow(ws, r, bg, "000000", false, 10, 6);
+      r++;
+      rowParity++;
+    });
+    ws.getCell(r, 1).value = `${tr(STR.totalPaidToPrefix, isEnglish)} ${group.payee}`;
+    ws.getCell(r, 4).value = group.total;
     ws.getCell(r, 4).numFmt = "#,##0.00";
-    ws.getCell(r, 5).value = p.category || "";
-    ws.getCell(r, 6).value = p.classification || "";
-    styleRow(ws, r, bg, "000000", false, 10, 6);
+    styleRow(ws, r, COLORS.totalThirdPartyBg, "000000", true, 10, 6);
     r++;
   });
   const checksTotal = checks.reduce((sum, p) => sum + p.amt, 0);
   ws.getCell(r, 1).value = tr(STR.totalChecksIssued, isEnglish);
-  ws.getCell(r, 4).value = checks.length > 0 ? ({ formula: `SUM(D${checksStartRow}:D${r - 1})`, result: checksTotal } as any) : 0;
+  // A plain value, not a SUM(range) formula: the range above now mixes individual payments with
+  // per-payee subtotal rows, so summing it would double-count. checksTotal is already the correct sum.
+  ws.getCell(r, 4).value = checksTotal;
   ws.getCell(r, 4).numFmt = "#,##0.00";
   styleRow(ws, r, COLORS.totalCOGSBg, "000000", true, 10, 6);
   r++;
@@ -284,23 +301,33 @@ function addThirdPartySheet(wb: ExcelJS.Workbook, data: ResultsData, isEnglish: 
   r++;
 
   const zelle: ThirdPartyPayment[] = [...(buckets?.zelleOutgoing || []), ...(buckets?.zelleIncoming || [])];
-  const zelleStartRow = r;
-  zelle.forEach((p, i) => {
-    const bg = i % 2 === 0 ? COLORS.altRow2 : COLORS.altRow1;
-    ws.getCell(r, 1).value = p.direction === "incoming" ? tr(STR.incomingClientPays, isEnglish) : tr(STR.outgoingBusinessPays, isEnglish);
-    ws.getCell(r, 2).value = p.identifier;
-    ws.getCell(r, 3).value = p.date || "";
-    ws.getCell(r, 4).value = p.amt;
+  const zelleGroups = groupThirdPartyByPayee(zelle, tr(STR.payeeNotShown, isEnglish));
+  let zelleRowParity = 0;
+  zelleGroups.forEach((group) => {
+    group.rows.forEach((p) => {
+      const bg = zelleRowParity % 2 === 0 ? COLORS.altRow2 : COLORS.altRow1;
+      ws.getCell(r, 1).value = p.direction === "incoming" ? tr(STR.incomingClientPays, isEnglish) : tr(STR.outgoingBusinessPays, isEnglish);
+      ws.getCell(r, 2).value = p.identifier;
+      ws.getCell(r, 3).value = p.date || "";
+      ws.getCell(r, 4).value = p.amt;
+      ws.getCell(r, 4).numFmt = "#,##0.00";
+      ws.getCell(r, 5).value = p.category || "";
+      ws.getCell(r, 6).value = [p.classification, p.alert].filter(Boolean).join(" — ");
+      styleRow(ws, r, bg, "000000", false, 10, 6);
+      if (p.alert) ws.getCell(r, 6).font = { name: "Arial", size: 10, bold: true, color: { argb: "922B21" } };
+      r++;
+      zelleRowParity++;
+    });
+    ws.getCell(r, 1).value = `${tr(STR.totalPaidToPrefix, isEnglish)} ${group.payee}`;
+    ws.getCell(r, 4).value = group.total;
     ws.getCell(r, 4).numFmt = "#,##0.00";
-    ws.getCell(r, 5).value = p.category || "";
-    ws.getCell(r, 6).value = [p.classification, p.alert].filter(Boolean).join(" — ");
-    styleRow(ws, r, bg, "000000", false, 10, 6);
-    if (p.alert) ws.getCell(r, 6).font = { name: "Arial", size: 10, bold: true, color: { argb: "922B21" } };
+    styleRow(ws, r, COLORS.totalThirdPartyBg, "000000", true, 10, 6);
     r++;
   });
   const zelleTotal = zelle.reduce((sum, p) => sum + p.amt, 0);
   ws.getCell(r, 1).value = tr(STR.totalZelle, isEnglish);
-  ws.getCell(r, 4).value = zelle.length > 0 ? ({ formula: `SUM(D${zelleStartRow}:D${r - 1})`, result: zelleTotal } as any) : 0;
+  // Plain value, not SUM(range): the range mixes per-payment rows with per-payee subtotal rows.
+  ws.getCell(r, 4).value = zelleTotal;
   ws.getCell(r, 4).numFmt = "#,##0.00";
   styleRow(ws, r, COLORS.totalOpexBg, "000000", true, 10, 6);
   r += 2;
@@ -596,6 +623,10 @@ function addAlertsSheet(wb: ExcelJS.Workbook, data: ResultsData, isEnglish: bool
   if (flags.length === 0) {
     ws.getCell(r, 1).value = tr(STR.noAlerts, isEnglish);
     styleRow(ws, r, COLORS.reconOkBg, "000000", false, 10, 1);
+    r += 2;
+    ws.getCell(r, 1).value = tr(STR.seeThirdPartyNote, isEnglish);
+    styleRow(ws, r, COLORS.altRow2, COLORS.detailFont, false, 9, 1);
+    ws.getRow(r).height = 28;
     return;
   }
 
@@ -605,6 +636,10 @@ function addAlertsSheet(wb: ExcelJS.Workbook, data: ResultsData, isEnglish: bool
     ws.getRow(r).height = Math.max(20, Math.ceil(flag.length / 100) * 16);
     r++;
   });
+  r++;
+  ws.getCell(r, 1).value = tr(STR.seeThirdPartyNote, isEnglish);
+  styleRow(ws, r, COLORS.altRow2, COLORS.detailFont, false, 9, 1);
+  ws.getRow(r).height = 28;
 }
 
 export async function generateProfessionalExcel(data: ResultsData, isEnglish = true) {
@@ -616,9 +651,9 @@ export async function generateProfessionalExcel(data: ResultsData, isEnglish = t
   addLineItemSheet(wb, tr(STR.tabCogs, isEnglish), tr(STR.cogsFull, isEnglish), data.period || "", data.sections.find((s) => s.kind === "cogs"), data.totalRevenue, isEnglish);
   addOpexSheet(wb, data, isEnglish);
   addLineItemSheet(wb, tr(STR.tabOtherExpenses, isEnglish), tr(STR.otherExpensesDeductions, isEnglish), data.period || "", data.sections.find((s) => s.kind === "personal"), data.totalRevenue, isEnglish);
-  addThirdPartySheet(wb, data, isEnglish);
   addFullPLSheet(wb, data, isEnglish);
   addAlertsSheet(wb, data, isEnglish);
+  addThirdPartySheet(wb, data, isEnglish);
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {

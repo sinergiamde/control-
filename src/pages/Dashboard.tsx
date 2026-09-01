@@ -9,6 +9,8 @@ import Navbar from "@/components/Navbar";
 import ChatBot from "@/components/ChatBot";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { ClientCombobox, type ClientOption } from "@/components/ClientCombobox";
+import { STR, tr } from "@/utils/i18n";
 
 const ANALYZE_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-statement`;
 
@@ -76,6 +78,7 @@ const getTopCategory = (source: any) => {
 
 const Dashboard = () => {
   const { t, lang } = useLanguage();
+  const isEnglish = lang === "en";
   const { user, session, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -85,6 +88,7 @@ const Dashboard = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentFileName, setCurrentFileName] = useState<string>("");
   const [processedCount, setProcessedCount] = useState(0);
+  const [client, setClient] = useState<ClientOption | null>(null);
 
   const addFiles = (newFiles: FileList | File[]) => {
     const arr = Array.from(newFiles);
@@ -160,6 +164,7 @@ const Dashboard = () => {
 
       const insertPayload = {
         user_id: user.id,
+        client_id: client?.id ?? null,
         company: src.company || src.companyName || src.company_name || "",
         period,
         revenues_total: revenuesTotal,
@@ -173,22 +178,28 @@ const Dashboard = () => {
         top_category: getTopCategory(src),
       };
 
-      const { error: dbError } = await supabase.from("analyses").insert(insertPayload);
+      const { data: inserted, error: dbError } = await supabase
+        .from("analyses")
+        .insert(insertPayload)
+        .select("id")
+        .single();
       if (dbError) {
         console.error("Insert error:", dbError);
         throw new Error(dbError.message);
       }
+      return { data, analysisId: inserted?.id as string | undefined };
     }
-    return data;
+    return { data, analysisId: undefined };
   };
 
   const handleAnalyze = async () => {
-    if (files.length === 0 || !user) return;
+    if (files.length === 0 || !user || !client) return;
     setLoading(true);
     setUploadProgress(0);
     setProcessedCount(0);
 
     let lastResult: any = null;
+    let lastAnalysisId: string | undefined;
     const errors: string[] = [];
     let saved = 0;
 
@@ -197,7 +208,9 @@ const Dashboard = () => {
       setCurrentFileName(f.name);
 
       try {
-        lastResult = await analyzeOne(f);
+        const outcome = await analyzeOne(f);
+        lastResult = outcome.data;
+        lastAnalysisId = outcome.analysisId;
         saved++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -225,7 +238,7 @@ const Dashboard = () => {
       });
 
       if (saved === 1 && files.length === 1 && lastResult) {
-        navigate("/results", { state: { results: lastResult } });
+        navigate("/results", { state: { results: lastResult, analysisId: lastAnalysisId } });
       } else {
         navigate("/history");
       }
@@ -294,6 +307,20 @@ const Dashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">{tr(STR.clientLabel, isEnglish)}</label>
+              <ClientCombobox
+                value={client?.id ?? null}
+                onChange={setClient}
+                placeholder={tr(STR.clientPickerPlaceholder, isEnglish)}
+                searchPlaceholder={tr(STR.clientSearchPlaceholder, isEnglish)}
+                emptyLabel={tr(STR.clientEmptyLabel, isEnglish)}
+                createLabel={(q) => `${tr(STR.clientCreatePrefix, isEnglish)} "${q}"`}
+                className="w-full sm:w-80"
+              />
+              <p className="text-xs text-muted-foreground">{tr(STR.clientRequiredHint, isEnglish)}</p>
+            </div>
+
             <div
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
@@ -373,7 +400,7 @@ const Dashboard = () => {
 
             <Button
               onClick={handleAnalyze}
-              disabled={files.length === 0 || loading}
+              disabled={files.length === 0 || loading || !client}
               className="w-full h-12 text-base font-bold neon-glow neon-glow-hover transition-all duration-300"
             >
               {loading ? (

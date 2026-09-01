@@ -6,10 +6,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
   DollarSign, TrendingUp, Receipt, ArrowLeft, Download, ChevronDown,
   ChevronUp, AlertTriangle, BarChart3, PieChart, Wallet, CreditCard,
   Building2, UtensilsCrossed, Car, ShoppingBag, Zap, Target, FileSpreadsheet, FileText,
-  CheckCircle2, Users,
+  CheckCircle2, Users, Pencil, Loader2,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
@@ -19,13 +23,17 @@ import {
   FOOD_OPEX_CATEGORY,
   PERSONAL_TRANSFER_CATEGORY,
   PERSONAL_THIRD_PARTY_CATEGORIES,
+  REASSIGN_TAXONOMY,
   type SectionKind,
   type ThirdPartyPayment,
   type ThirdPartyBuckets,
   type BankSummary,
   type ReconciliationResult,
+  type TransactionList,
 } from "@/utils/reportTypes";
 import { STR, tr, translateCategory, pickText, pickArray } from "@/utils/i18n";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface LineItem {
   name: string;
@@ -33,6 +41,12 @@ interface LineItem {
   percentage: number;
   detail?: string;
   category?: string;
+  /** Present only for items that map 1:1 to a raw transaction in analysis.<list>[index] — lets the
+   * "reassign" action find and move the exact underlying transaction. Synthetic/derived rows (the
+   * "moved to Third Party Payments" reference line, third-party payment entries, etc.) omit these,
+   * so they simply don't get a reassign button. */
+  sourceList?: TransactionList;
+  sourceIndex?: number;
 }
 
 interface Section {
@@ -120,7 +134,9 @@ const AnimatedNumber = ({ value, prefix = "$", delay = 0 }: { value: number; pre
   );
 };
 
-const CollapsibleSection = ({ section, index }: { section: Section; index: number }) => {
+const CollapsibleSection = ({
+  section, index, onReassign,
+}: { section: Section; index: number; onReassign?: (item: LineItem) => void }) => {
   const [open, setOpen] = useState(false);
   const Icon = section.icon;
 
@@ -175,6 +191,16 @@ const CollapsibleSection = ({ section, index }: { section: Section; index: numbe
                   <span className="text-sm font-semibold text-foreground w-24 text-right">
                     ${item.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                   </span>
+                  {onReassign && item.sourceList !== undefined && item.sourceIndex !== undefined && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onReassign(item); }}
+                      className="text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover/item:opacity-100 shrink-0"
+                      title="Reassign"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -216,6 +242,16 @@ const sectionColors = [
   "hsl(180, 60%, 45%)",
 ];
 
+const reassignListLabel = (list: TransactionList) => {
+  switch (list) {
+    case "revenues": return STR.revenue;
+    case "cogs": return STR.cogsFull;
+    case "opex": return STR.operatingExpenses;
+    case "fees": return STR.feesFallback;
+    case "personal": return STR.otherExpensesDeductions;
+  }
+};
+
 const toNumber = (value: unknown) => {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
@@ -231,6 +267,12 @@ const toPercent = (value: number, total: number) => (total > 0 ? (value / total)
 const sumAnalysisItems = (items: any[] = []) =>
   items.reduce((sum, item) => sum + toNumber(item?.amt ?? item?.amount), 0);
 
+/** Tags each item with which raw array (and original index within it) it came from, so a later
+ * "reassign" edit knows exactly where to remove/re-insert it — filtering/splitting an array
+ * afterwards (e.g. pulling Food items out of opex) preserves these tags on each object. */
+const tagList = (items: any[] = [], list: TransactionList) =>
+  items.map((item, idx) => ({ ...item, __list: list, __idx: idx }));
+
 const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number, isEnglish = true): LineItem[] =>
   items.map((item) => {
     const amount = toNumber(item?.amt ?? item?.amount);
@@ -242,6 +284,8 @@ const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number, isEngli
       percentage: toPercent(amount, totalRevenue),
       detail: detailParts.length > 0 ? detailParts.join(" • ") : undefined,
       category: item?.category ? translateCategory(String(item.category), isEnglish) : undefined,
+      sourceList: item?.__list,
+      sourceIndex: typeof item?.__idx === "number" ? item.__idx : undefined,
     };
   });
 
@@ -296,11 +340,11 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
     Array.isArray(source?.fees) ||
     Array.isArray(source?.personal)
   ) {
-    const revenues = Array.isArray(source?.revenues) ? source.revenues : [];
-    const cogs = Array.isArray(source?.cogs) ? source.cogs : [];
-    const rawOpex = Array.isArray(source?.opex) ? source.opex : [];
-    const fees = Array.isArray(source?.fees) ? source.fees : [];
-    const personal = Array.isArray(source?.personal) ? source.personal : [];
+    const revenues = tagList(Array.isArray(source?.revenues) ? source.revenues : [], "revenues");
+    const cogs = tagList(Array.isArray(source?.cogs) ? source.cogs : [], "cogs");
+    const rawOpex = tagList(Array.isArray(source?.opex) ? source.opex : [], "opex");
+    const fees = tagList(Array.isArray(source?.fees) ? source.fees : [], "fees");
+    const personal = tagList(Array.isArray(source?.personal) ? source.personal : [], "personal");
 
     const foodItems = rawOpex.filter((item: any) => item?.category === FOOD_OPEX_CATEGORY);
     const opexWithoutFood = rawOpex.filter((item: any) => item?.category !== FOOD_OPEX_CATEGORY);
@@ -507,8 +551,13 @@ const Results = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
 
-  const rawResults = (location.state as any)?.results;
+  const analysisId = (location.state as any)?.analysisId as string | undefined;
+  const [rawResults, setRawResults] = useState<any>((location.state as any)?.results);
+  const [reassignItem, setReassignItem] = useState<LineItem | null>(null);
+  const [reassignTarget, setReassignTarget] = useState<string>("");
+  const [savingReassign, setSavingReassign] = useState(false);
 
   if (!user) {
     navigate("/");
@@ -539,6 +588,79 @@ const Results = () => {
   }
 
   const results: ResultsData = transformAPIResponse(rawResults, isEnglish);
+
+  const openReassign = (item: LineItem) => {
+    setReassignItem(item);
+    setReassignTarget("");
+  };
+
+  const handleConfirmReassign = async () => {
+    if (!reassignItem || !reassignTarget || reassignItem.sourceList === undefined || reassignItem.sourceIndex === undefined) return;
+    const separatorIndex = reassignTarget.indexOf("::");
+    const targetList = reassignTarget.slice(0, separatorIndex) as TransactionList;
+    const targetCategory = reassignTarget.slice(separatorIndex + 2);
+    if (!targetList || !targetCategory) return;
+
+    setSavingReassign(true);
+    try {
+      const cloned = JSON.parse(JSON.stringify(rawResults));
+      const source = cloned?.analysis ?? cloned;
+      const fromArr: any[] = Array.isArray(source[reassignItem.sourceList]) ? source[reassignItem.sourceList] : [];
+      const [movedItem] = fromArr.splice(reassignItem.sourceIndex, 1);
+      if (!movedItem) throw new Error("Transaction not found");
+      movedItem.category = targetCategory;
+      if (!Array.isArray(source[targetList])) source[targetList] = [];
+      source[targetList].push(movedItem);
+
+      const sumList = (arr: any[]) =>
+        (Array.isArray(arr) ? arr : []).reduce((sum: number, it: any) => sum + toNumber(it?.amt ?? it?.amount), 0);
+      const revenuesTotal = sumList(source.revenues);
+      const cogsTotal = sumList(source.cogs);
+      const opexTotal = sumList(source.opex);
+      const feesTotal = sumList(source.fees);
+      const personalTotal = sumList(source.personal);
+      const totalSpent = cogsTotal + opexTotal + feesTotal + personalTotal;
+      const allExpenseItems = [
+        ...(Array.isArray(source.cogs) ? source.cogs : []),
+        ...(Array.isArray(source.opex) ? source.opex : []),
+        ...(Array.isArray(source.fees) ? source.fees : []),
+        ...(Array.isArray(source.personal) ? source.personal : []),
+      ];
+      const topItem = [...allExpenseItems].sort(
+        (a, b) => toNumber(b?.amt ?? b?.amount) - toNumber(a?.amt ?? a?.amount)
+      )[0];
+      const topCategory = String(topItem?.desc || topItem?.category || "");
+
+      if (analysisId) {
+        const { error } = await supabase
+          .from("analyses")
+          .update({
+            full_analysis: cloned,
+            revenues_total: revenuesTotal,
+            cogs_total: cogsTotal,
+            opex_total: opexTotal,
+            fees_total: feesTotal,
+            personal_total: personalTotal,
+            total_spent: totalSpent,
+            top_category: topCategory,
+          })
+          .eq("id", analysisId);
+        if (error) throw error;
+      }
+
+      setRawResults(cloned);
+      setReassignItem(null);
+      toast({ title: "✅", description: tr(STR.reassignSuccess, isEnglish) });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : tr(STR.reassignError, isEnglish),
+        variant: "destructive",
+      });
+    } finally {
+      setSavingReassign(false);
+    }
+  };
 
   const handleDownloadExcel = () => {
     generateProfessionalExcel(results, isEnglish);
@@ -683,7 +805,7 @@ const Results = () => {
             {tr(STR.detailedBreakdown, isEnglish)}
           </h2>
           {results.sections.map((section, i) => (
-            <CollapsibleSection key={section.title} section={section} index={i} />
+            <CollapsibleSection key={section.title} section={section} index={i} onReassign={analysisId ? openReassign : undefined} />
           ))}
         </div>
 
@@ -778,6 +900,65 @@ const Results = () => {
           {tr(STR.footerDisclaimer, isEnglish)}
         </p>
       </div>
+
+      <Dialog open={!!reassignItem} onOpenChange={(open) => { if (!open) setReassignItem(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{tr(STR.reassignDialogTitle, isEnglish)}</DialogTitle>
+            <DialogDescription>{tr(STR.reassignDialogDesc, isEnglish)}</DialogDescription>
+          </DialogHeader>
+
+          {reassignItem && (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
+                <p className="text-sm font-medium text-foreground truncate">{reassignItem.name}</p>
+                <div className="flex items-center justify-between mt-1">
+                  {reassignItem.category && (
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                      {reassignItem.category}
+                    </span>
+                  )}
+                  <span className="text-sm font-semibold text-foreground">
+                    ${reassignItem.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">{tr(STR.reassignCategoryLabel, isEnglish)}</label>
+                <Select value={reassignTarget} onValueChange={setReassignTarget}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={tr(STR.reassignCategoryLabel, isEnglish)} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(REASSIGN_TAXONOMY) as TransactionList[]).map((list) => (
+                      <SelectGroup key={list}>
+                        <SelectLabel>{tr(reassignListLabel(list), isEnglish)}</SelectLabel>
+                        {REASSIGN_TAXONOMY[list].map((category) => (
+                          <SelectItem key={`${list}::${category}`} value={`${list}::${category}`}>
+                            {translateCategory(category, isEnglish)}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReassignItem(null)} disabled={savingReassign}>
+              {tr(STR.reassignCancel, isEnglish)}
+            </Button>
+            <Button onClick={handleConfirmReassign} disabled={!reassignTarget || savingReassign} className="neon-glow">
+              {savingReassign ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {savingReassign ? tr(STR.reassignSaving, isEnglish) : tr(STR.reassignSave, isEnglish)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ChatBot />
     </div>
   );

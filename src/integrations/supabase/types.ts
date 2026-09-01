@@ -14,6 +14,7 @@ export type Database = {
     Tables: {
       analyses: {
         Row: {
+          client_id: string | null
           cogs_total: number
           company: string
           created_at: string
@@ -30,6 +31,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          client_id?: string | null
           cogs_total?: number
           company?: string
           created_at?: string
@@ -46,6 +48,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          client_id?: string | null
           cogs_total?: number
           company?: string
           created_at?: string
@@ -60,6 +63,94 @@ export type Database = {
           top_category?: string
           total_spent?: number
           user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analyses_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      annual_summaries: {
+        Row: {
+          categories: Json
+          client_id: string | null
+          cogs_total: number
+          fees_total: number
+          generated_at: string
+          id: string
+          net_income: number
+          opex_total: number
+          personal_total: number
+          revenues_total: number
+          statements_count: number
+          user_id: string
+          year: number
+        }
+        Insert: {
+          categories?: Json
+          client_id?: string | null
+          cogs_total?: number
+          fees_total?: number
+          generated_at?: string
+          id?: string
+          net_income?: number
+          opex_total?: number
+          personal_total?: number
+          revenues_total?: number
+          statements_count?: number
+          user_id: string
+          year: number
+        }
+        Update: {
+          categories?: Json
+          client_id?: string | null
+          cogs_total?: number
+          fees_total?: number
+          generated_at?: string
+          id?: string
+          net_income?: number
+          opex_total?: number
+          personal_total?: number
+          revenues_total?: number
+          statements_count?: number
+          user_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "annual_summaries_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
         }
         Relationships: []
       }

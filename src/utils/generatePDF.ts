@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 import { totalBankWithdrawals } from "./reconciliation";
 import { STR, tr } from "./i18n";
 import type { LineItem, ResultsData, Section, SectionKind, ThirdPartyPayment } from "./reportTypes";
+import { groupThirdPartyByPayee } from "./reportTypes";
 
 type RGB = [number, number, number];
 
@@ -250,12 +251,30 @@ function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData, 
   );
   const buckets = data.thirdPartyBuckets;
 
-  // --- Checks Issued ---
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(90, 90, 90);
+  const noteLines = doc.splitTextToSize(tr(STR.thirdPartyInfoNote, isEnglish), pageWidth - 28);
+  doc.text(noteLines, 14, y);
+  y += noteLines.length * 4 + 3;
+  doc.setFont("helvetica", "normal");
+
+  // --- Checks Issued (grouped by payee, oldest to newest, with a subtotal per person) ---
   y = sectionBanner(doc, y, pageWidth, tr(STR.checksIssued, isEnglish), SECTION_COLOR_BY_KIND.cogs.bg);
   const checks = buckets?.checks || [];
   const checksTotal = checks.reduce((sum, p) => sum + p.amt, 0);
-  const checksBody: any[] = checks.map((p) => [p.identifier, p.payee || tr(STR.verifyNoPayee, isEnglish), p.date || "", fmt(p.amt), p.category || "", p.classification || ""]);
+  const checkGroups = groupThirdPartyByPayee(checks, tr(STR.verifyNoPayee, isEnglish));
+  const checksBody: any[] = [];
+  const checksSubtotalRows = new Set<number>();
+  checkGroups.forEach((group) => {
+    group.rows.forEach((p) => {
+      checksBody.push([p.identifier, p.payee || tr(STR.verifyNoPayee, isEnglish), p.date || "", fmt(p.amt), p.category || "", p.classification || ""]);
+    });
+    checksBody.push([{ content: `${tr(STR.totalPaidToPrefix, isEnglish)} ${group.payee}`, colSpan: 3, styles: { fontStyle: "bold" } }, fmt(group.total), "", ""]);
+    checksSubtotalRows.add(checksBody.length - 1);
+  });
   checksBody.push([{ content: tr(STR.totalChecksIssued, isEnglish), colSpan: 3, styles: { fontStyle: "bold" } }, fmt(checksTotal), "", ""]);
+  const checksGrandTotalRow = checksBody.length - 1;
 
   const checksField = data.reconciliation?.fields.find((f) => f.id === "checksIssued");
   if (checksField && checksField.bankAmount !== null) {
@@ -274,21 +293,36 @@ function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData, 
     styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white, fontStyle: "bold" },
     alternateRowStyles: { fillColor: COLORS.altGray },
+    didParseCell(hookData) {
+      if (hookData.section !== "body") return;
+      if (checksSubtotalRows.has(hookData.row.index)) hookData.cell.styles.fillColor = COLORS.totalThirdParty;
+      if (hookData.row.index === checksGrandTotalRow) hookData.cell.styles.fillColor = COLORS.totalBlue;
+    },
     margin: { left: 14, right: 14 },
   });
   y = (doc as any).lastAutoTable.finalY + 6;
 
-  // --- Zelle Transactions ---
+  // --- Zelle Transactions (grouped by person, oldest to newest, with a subtotal per person) ---
   y = ensureSpace(doc, y, 230);
   y = sectionBanner(doc, y, pageWidth, tr(STR.zelleTransactions, isEnglish), SECTION_COLOR_BY_KIND.opex.bg);
 
   const zelle: ThirdPartyPayment[] = [...(buckets?.zelleOutgoing || []), ...(buckets?.zelleIncoming || [])];
   const zelleTotal = zelle.reduce((sum, p) => sum + p.amt, 0);
-  const zelleBody = zelle.map((p) => [
-    p.direction === "incoming" ? tr(STR.incomingClientPays, isEnglish) : tr(STR.outgoingBusinessPays, isEnglish),
-    p.identifier, p.date || "", fmt(p.amt), p.category || "", [p.classification, p.alert].filter(Boolean).join(" — "),
-  ]);
+  const zelleGroups = groupThirdPartyByPayee(zelle, tr(STR.payeeNotShown, isEnglish));
+  const zelleBody: any[] = [];
+  const zelleSubtotalRows = new Set<number>();
+  zelleGroups.forEach((group) => {
+    group.rows.forEach((p) => {
+      zelleBody.push([
+        p.direction === "incoming" ? tr(STR.incomingClientPays, isEnglish) : tr(STR.outgoingBusinessPays, isEnglish),
+        p.identifier, p.date || "", fmt(p.amt), p.category || "", [p.classification, p.alert].filter(Boolean).join(" — "),
+      ]);
+    });
+    zelleBody.push([{ content: `${tr(STR.totalPaidToPrefix, isEnglish)} ${group.payee}`, colSpan: 3, styles: { fontStyle: "bold" } } as any, fmt(group.total), "", ""]);
+    zelleSubtotalRows.add(zelleBody.length - 1);
+  });
   zelleBody.push([{ content: tr(STR.totalZelle, isEnglish), colSpan: 3, styles: { fontStyle: "bold" } } as any, fmt(zelleTotal), "", ""]);
+  const zelleGrandTotalRow = zelleBody.length - 1;
 
   autoTable(doc, {
     startY: y,
@@ -298,6 +332,11 @@ function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData, 
     styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white, fontStyle: "bold" },
     alternateRowStyles: { fillColor: COLORS.altGray },
+    didParseCell(hookData) {
+      if (hookData.section !== "body") return;
+      if (zelleSubtotalRows.has(hookData.row.index)) hookData.cell.styles.fillColor = COLORS.totalThirdParty;
+      if (hookData.row.index === zelleGrandTotalRow) hookData.cell.styles.fillColor = COLORS.totalOrange;
+    },
     margin: { left: 14, right: 14 },
   });
   y = (doc as any).lastAutoTable.finalY + 6;
@@ -411,7 +450,7 @@ function renderFullPLPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEn
 }
 
 function renderAlertsPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEnglish: boolean) {
-  const y = pageHeader(doc, pageWidth, tr(STR.alertsRecommendations, isEnglish), `${data.period || ""} | ${data.companyName || "CTRL+"}`);
+  let y = pageHeader(doc, pageWidth, tr(STR.alertsRecommendations, isEnglish), `${data.period || ""} | ${data.companyName || "CTRL+"}`);
   const flags = data.redFlags || [];
 
   if (flags.length === 0) {
@@ -423,17 +462,25 @@ function renderAlertsPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEn
       bodyStyles: { fillColor: COLORS.totalGreen },
       margin: { left: 14, right: 14 },
     });
-    return;
+    y = (doc as any).lastAutoTable.finalY + 5;
+  } else {
+    autoTable(doc, {
+      startY: y,
+      body: flags.map((f) => [`⚠ ${f}`]),
+      theme: "plain",
+      styles: { fontSize: 8, cellPadding: 2 },
+      bodyStyles: { fillColor: [253, 237, 236] as RGB, textColor: [146, 43, 33] as RGB },
+      margin: { left: 14, right: 14 },
+    });
+    y = (doc as any).lastAutoTable.finalY + 5;
   }
 
-  autoTable(doc, {
-    startY: y,
-    body: flags.map((f) => [`⚠ ${f}`]),
-    theme: "plain",
-    styles: { fontSize: 8, cellPadding: 2 },
-    bodyStyles: { fillColor: [253, 237, 236] as RGB, textColor: [146, 43, 33] as RGB },
-    margin: { left: 14, right: 14 },
-  });
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(90, 90, 90);
+  const noteLines = doc.splitTextToSize(tr(STR.seeThirdPartyNote, isEnglish), pageWidth - 28);
+  doc.text(noteLines, 14, y + 4);
+  doc.setFont("helvetica", "normal");
 }
 
 export function generateProfessionalPDF(data: ResultsData, isEnglish = true) {
@@ -441,9 +488,6 @@ export function generateProfessionalPDF(data: ResultsData, isEnglish = true) {
   const pageWidth = doc.internal.pageSize.getWidth();
 
   renderExecutiveSummary(doc, pageWidth, data, isEnglish);
-
-  doc.addPage();
-  renderThirdPartyPage(doc, pageWidth, data, isEnglish);
 
   doc.addPage();
   renderLineItemsPage(doc, pageWidth, tr(STR.revenue, isEnglish), data.period || "", data.sections.find((s) => s.kind === "revenue"), SECTION_COLOR_BY_KIND.revenue, isEnglish);
@@ -462,6 +506,9 @@ export function generateProfessionalPDF(data: ResultsData, isEnglish = true) {
 
   doc.addPage();
   renderAlertsPage(doc, pageWidth, data, isEnglish);
+
+  doc.addPage();
+  renderThirdPartyPage(doc, pageWidth, data, isEnglish);
 
   doc.setFontSize(7);
   doc.setTextColor(150, 150, 150);
