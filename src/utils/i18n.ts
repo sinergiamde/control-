@@ -358,4 +358,11 @@ export const STR = {
   customRangeLabel: { en: "Custom range…", es: "Rango personalizado…" },
   pickDateRange: { en: "Pick a date range", es: "Elige un rango de fechas" },
   applyWord: { en: "Apply", es: "Aplicar" },
+  // Dedicated "download report" card at the top of History
+  downloadReportTitle: { en: "Download report", es: "Descargar reporte" },
+  downloadReportDesc: {
+    en: "Choose the client and the month (or date range, via the calendar) you want, then download.",
+    es: "Elige el cliente y el mes (o rango de fechas, con el calendario) que quieras, y descarga.",
+  },
+  whichMonthLabel: { en: "Which month?", es: "¿Qué mes?" },
 } satisfies Record<string, Bilingual>;

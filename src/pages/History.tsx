@@ -374,91 +374,117 @@ const History = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
       <main className="flex-1 container mx-auto px-4 py-8 max-w-6xl space-y-6">
+        <Card className="neon-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5 text-primary" />
+              {tr(STR.downloadReportTitle, isEnglish)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">{tr(STR.downloadReportDesc, isEnglish)}</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">{tr(STR.clientLabel, isEnglish)}</label>
+                <ClientCombobox
+                  value={clientFilter?.id ?? null}
+                  onChange={setClientFilter}
+                  placeholder={tr(STR.clientFilterAllLabel, isEnglish)}
+                  searchPlaceholder={tr(STR.clientSearchPlaceholder, isEnglish)}
+                  emptyLabel={tr(STR.clientEmptyLabel, isEnglish)}
+                  createLabel={(q) => `${tr(STR.clientCreatePrefix, isEnglish)} "${q}"`}
+                  allowClear
+                  clearLabel={tr(STR.clientFilterAllLabel, isEnglish)}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">{tr(STR.whichMonthLabel, isEnglish)}</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Select
+                    value={range}
+                    onValueChange={(v) => { setRange(v); if (v === "custom") setCustomRangeOpen(true); }}
+                  >
+                    <SelectTrigger className="flex-1 min-w-[140px]">
+                      <SelectValue placeholder={tr(STR.periodWord, isEnglish)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{tr(STR.allYears, isEnglish)}</SelectItem>
+                      <SelectItem value="last3">{tr(STR.lastQuarter, isEnglish)}</SelectItem>
+                      <SelectItem value="last6">{tr(STR.last6Months, isEnglish)}</SelectItem>
+                      {!years.includes(previousYear) && (
+                        <SelectItem value={previousYear}>{tr(STR.previousYearWord, isEnglish)} ({previousYear})</SelectItem>
+                      )}
+                      {years.map((y) => (
+                        <SelectItem key={y} value={y}>
+                          {y === previousYear ? `${tr(STR.previousYearWord, isEnglish)} (${y})` : `${tr(STR.yearWord, isEnglish)} ${y}`}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="custom">{tr(STR.customRangeLabel, isEnglish)}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Popover open={customRangeOpen} onOpenChange={setCustomRangeOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => { setRange("custom"); setCustomRangeOpen(true); }}
+                        className="font-normal shrink-0"
+                        title={tr(STR.pickDateRange, isEnglish)}
+                      >
+                        <CalendarRange className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="range"
+                        selected={customRange}
+                        onSelect={(v) => { setCustomRange(v); setRange("custom"); }}
+                        numberOfMonths={2}
+                        defaultMonth={customRange?.from}
+                      />
+                      <div className="flex justify-end p-2 border-t border-border">
+                        <Button size="sm" onClick={() => setCustomRangeOpen(false)} disabled={!customRange?.from || !customRange?.to}>
+                          {tr(STR.applyWord, isEnglish)}
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <Button
+                disabled={filtered.length === 0 || downloading}
+                onClick={() => handleDownload("pdf")}
+                className="neon-glow"
+              >
+                {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
+                {tr(STR.downloadPdf, isEnglish)} — {rangeLabel}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={filtered.length === 0 || downloading}
+                onClick={() => handleDownload("excel")}
+              >
+                {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 mr-1" />}
+                {tr(STR.downloadExcel, isEnglish)} — {rangeLabel}
+              </Button>
+              {filtered.length === 0 && (
+                <span className="text-xs text-muted-foreground">{tr(STR.noAnalysesPeriod, isEnglish)}</span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2">
               <HistoryIcon className="h-5 w-5 text-primary" />
               {tr(STR.summaryLabel, isEnglish)} ({filtered.length} {tr(STR.statementWord, isEnglish)}{filtered.length === 1 ? "" : "s"})
             </CardTitle>
-            <div className="flex items-center gap-2 flex-wrap">
-              <ClientCombobox
-                value={clientFilter?.id ?? null}
-                onChange={setClientFilter}
-                placeholder={tr(STR.clientFilterAllLabel, isEnglish)}
-                searchPlaceholder={tr(STR.clientSearchPlaceholder, isEnglish)}
-                emptyLabel={tr(STR.clientEmptyLabel, isEnglish)}
-                createLabel={(q) => `${tr(STR.clientCreatePrefix, isEnglish)} "${q}"`}
-                allowClear
-                clearLabel={tr(STR.clientFilterAllLabel, isEnglish)}
-                className="w-48"
-              />
-              <Select
-                value={range}
-                onValueChange={(v) => { setRange(v); if (v === "custom") setCustomRangeOpen(true); }}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder={tr(STR.periodWord, isEnglish)} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{tr(STR.allYears, isEnglish)}</SelectItem>
-                  <SelectItem value="last3">{tr(STR.lastQuarter, isEnglish)}</SelectItem>
-                  <SelectItem value="last6">{tr(STR.last6Months, isEnglish)}</SelectItem>
-                  {!years.includes(previousYear) && (
-                    <SelectItem value={previousYear}>{tr(STR.previousYearWord, isEnglish)} ({previousYear})</SelectItem>
-                  )}
-                  {years.map((y) => (
-                    <SelectItem key={y} value={y}>
-                      {y === previousYear ? `${tr(STR.previousYearWord, isEnglish)} (${y})` : `${tr(STR.yearWord, isEnglish)} ${y}`}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="custom">{tr(STR.customRangeLabel, isEnglish)}</SelectItem>
-                </SelectContent>
-              </Select>
-              {range === "custom" && (
-                <Popover open={customRangeOpen} onOpenChange={setCustomRangeOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="font-normal">
-                      <CalendarRange className="h-4 w-4 mr-1" />
-                      {customRange?.from && customRange?.to
-                        ? `${fmtDate(customRange.from)} – ${fmtDate(customRange.to)}`
-                        : tr(STR.pickDateRange, isEnglish)}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="range"
-                      selected={customRange}
-                      onSelect={setCustomRange}
-                      numberOfMonths={2}
-                      defaultMonth={customRange?.from}
-                    />
-                    <div className="flex justify-end p-2 border-t border-border">
-                      <Button size="sm" onClick={() => setCustomRangeOpen(false)} disabled={!customRange?.from || !customRange?.to}>
-                        {tr(STR.applyWord, isEnglish)}
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              )}
-              <Button
-                size="sm" variant="outline"
-                disabled={filtered.length === 0 || downloading}
-                onClick={() => handleDownload("excel")}
-                title={`${tr(STR.downloadExcel, isEnglish)} — ${rangeLabel}`}
-              >
-                {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 mr-1" />}
-                Excel ({rangeLabel})
-              </Button>
-              <Button
-                size="sm" variant="outline"
-                disabled={filtered.length === 0 || downloading}
-                onClick={() => handleDownload("pdf")}
-                title={`${tr(STR.downloadPdf, isEnglish)} — ${rangeLabel}`}
-              >
-                {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
-                PDF ({rangeLabel})
-              </Button>
-            </div>
           </CardHeader>
           <CardContent>
             {/^\d{4}$/.test(range) && (
