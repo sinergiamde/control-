@@ -59,6 +59,16 @@ const Clients = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user]);
 
+  // Every hook must run on every render, so this has to sit above the early returns below —
+  // landing directly on /clients (a fresh load, not a client-side nav from another page) renders
+  // once while auth is still resolving, then again once it's ready; a hook declared after an early
+  // return would only run on the second render, and React crashes the whole page on that mismatch
+  // ("Rendered more hooks than during the previous render").
+  const filtered = useMemo(
+    () => clients.filter((c) => c.name.toLowerCase().includes(search.toLowerCase())),
+    [clients, search]
+  );
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -145,11 +155,6 @@ const Clients = () => {
     setClients((prev) => prev.filter((c) => c.id !== client.id));
     toast({ title: "✅", description: t("clientDeleted") });
   };
-
-  const filtered = useMemo(
-    () => clients.filter((c) => c.name.toLowerCase().includes(search.toLowerCase())),
-    [clients, search]
-  );
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
