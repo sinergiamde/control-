@@ -312,6 +312,10 @@ export const STR = {
   actionWord: { en: "Action", es: "Acción" },
   viewWord: { en: "View", es: "Ver" },
   statementDeletedTitle: { en: "Statement deleted", es: "Extracto eliminado" },
+  confirmDeleteStatement: {
+    en: "Delete this statement? This cannot be undone — the PDF/Excel already downloaded from it are unaffected.",
+    es: "¿Eliminar este extracto? Esto no se puede deshacer — el PDF/Excel que ya descargaste de él no se ve afectado.",
+  },
   wasDeletedSuffix: { en: "was deleted.", es: "fue eliminado." },
   couldNotGenerateFile: { en: "Could not generate the file.", es: "No se pudo generar el archivo." },
   uncategorized: { en: "Uncategorized", es: "Sin categoría" },

@@ -358,6 +358,7 @@ const History = () => {
   };
 
   const handleDelete = async (row: AnalysisRow) => {
+    if (!window.confirm(tr(STR.confirmDeleteStatement, isEnglish))) return;
     setDeleting(row.id);
     const { error } = await supabase.from("analyses").delete().eq("id", row.id);
     if (error) {
