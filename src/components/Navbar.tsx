@@ -2,6 +2,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { LogOut, ShieldCheck, LayoutDashboard, History, Building2 } from "lucide-react";
+import { FlagIcon } from "@/components/FlagIcon";
 import { useNavigate, useLocation } from "react-router-dom";
 
 const Navbar = () => {
@@ -43,7 +44,7 @@ const Navbar = () => {
               lang === "en" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}
           >
-            <span className="text-base leading-none">🇺🇸</span> EN
+            <FlagIcon country="us" className="w-4 h-3 rounded-[1px] shrink-0" /> EN
           </button>
           <button
             type="button"
@@ -54,7 +55,7 @@ const Navbar = () => {
               lang === "es" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}
           >
-            <span className="text-base leading-none">🇪🇸</span> ES
+            <FlagIcon country="es" className="w-4 h-3 rounded-[1px] shrink-0" /> ES
           </button>
         </div>
 

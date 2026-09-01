@@ -169,13 +169,17 @@ const Clients = () => {
           <CardContent className="p-4">
             <div className="flex flex-col sm:flex-row gap-2">
               <Input
+                autoFocus
                 placeholder={t("clientNamePlaceholder")}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) handleCreate(); }}
                 className="bg-muted border-border text-foreground"
               />
-              <Button onClick={handleCreate} disabled={creating} className="neon-glow shrink-0">
+              {/* Disabled while empty instead of only validating on click — a click that produces
+                  nothing but an error toast reads, to a first-time visitor, like the button is
+                  broken rather than like the field needs text first. */}
+              <Button onClick={handleCreate} disabled={creating || !newName.trim()} className="neon-glow shrink-0">
                 {creating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
                 {t("addClient")}
               </Button>
