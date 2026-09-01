@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -89,10 +89,18 @@ const Dashboard = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentFileName, setCurrentFileName] = useState<string>("");
   const [processedCount, setProcessedCount] = useState(0);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const [client, setClient] = useState<ClientOption | null>(null);
+  const [clientFieldError, setClientFieldError] = useState(false);
+
+  const ACCEPTED_EXTENSIONS = [".pdf", ".csv", ".xlsx", ".xls"];
 
   const addFiles = (newFiles: FileList | File[]) => {
-    const arr = Array.from(newFiles);
+    // A folder pick (webkitdirectory) hands back everything in it -- filter down to statement
+    // files so a stray .DS_Store/image/subfolder file doesn't end up queued for analysis.
+    const arr = Array.from(newFiles).filter((f) =>
+      ACCEPTED_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext))
+    );
     setFiles((prev) => {
       const existing = new Set(prev.map((f) => `${f.name}-${f.size}`));
       const unique = arr.filter((f) => !existing.has(`${f.name}-${f.size}`));
@@ -194,7 +202,16 @@ const Dashboard = () => {
   };
 
   const handleAnalyze = async () => {
-    if (files.length === 0 || !user || !client) return;
+    if (files.length === 0 || !user) return;
+    if (!client) {
+      setClientFieldError(true);
+      toast({
+        title: "⚠️",
+        description: tr(STR.clientRequiredHint, isEnglish),
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     setUploadProgress(0);
     setProcessedCount(0);
@@ -313,14 +330,16 @@ const Dashboard = () => {
               <label className="text-sm font-medium text-foreground">{tr(STR.clientLabel, isEnglish)}</label>
               <ClientCombobox
                 value={client?.id ?? null}
-                onChange={setClient}
+                onChange={(c) => { setClient(c); if (c) setClientFieldError(false); }}
                 placeholder={tr(STR.clientPickerPlaceholder, isEnglish)}
                 searchPlaceholder={tr(STR.clientSearchPlaceholder, isEnglish)}
                 emptyLabel={tr(STR.clientEmptyLabel, isEnglish)}
                 createLabel={(q) => `${tr(STR.clientCreatePrefix, isEnglish)} "${q}"`}
-                className="w-full sm:w-80"
+                className={`w-full sm:w-80 ${clientFieldError ? "border-destructive ring-1 ring-destructive animate-pulse" : ""}`}
               />
-              <p className="text-xs text-muted-foreground">{tr(STR.clientRequiredHint, isEnglish)}</p>
+              <p className={`text-xs ${clientFieldError ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                {tr(STR.clientRequiredHint, isEnglish)}
+              </p>
             </div>
 
             <div
@@ -342,6 +361,17 @@ const Dashboard = () => {
                 accept=".pdf,.csv,.xlsx,.xls"
                 onChange={handleFileChange}
                 className="absolute inset-0 opacity-0 cursor-pointer"
+              />
+              {/* Separate hidden input for picking a whole folder at once (webkitdirectory isn't a
+                  typed React DOM prop, so it's spread in as a plain attribute) -- kept outside the
+                  dropzone's own input so the two file pickers don't fight over the same click. */}
+              <input
+                ref={folderInputRef}
+                type="file"
+                multiple
+                onChange={handleFileChange}
+                className="hidden"
+                {...({ webkitdirectory: "true", directory: "true" } as any)}
               />
               {files.length > 0 ? (
                 <div className="flex flex-col items-center gap-3 animate-scale-in">
@@ -384,6 +414,14 @@ const Dashboard = () => {
               )}
             </div>
 
+            <button
+              type="button"
+              onClick={() => folderInputRef.current?.click()}
+              className="text-xs text-primary hover:underline -mt-3 block mx-auto"
+            >
+              {tr(STR.orSelectFolder, isEnglish)}
+            </button>
+
             {loading && (
               <div className="space-y-2 animate-fade-in">
                 <div className="flex justify-between text-xs text-muted-foreground">
@@ -402,7 +440,7 @@ const Dashboard = () => {
 
             <Button
               onClick={handleAnalyze}
-              disabled={files.length === 0 || loading || !client}
+              disabled={files.length === 0 || loading}
               className="w-full h-12 text-base font-bold neon-glow neon-glow-hover transition-all duration-300"
             >
               {loading ? (

@@ -379,6 +379,7 @@ export const STR = {
   revenueByClientDesc: { en: "Top clients, all-time revenue", es: "Principales clientes, ingresos históricos" },
   expenseMixTitle: { en: "Expense mix", es: "Distribución de gastos" },
   expenseMixDesc: { en: "All-time, across every client", es: "Histórico, de todos los clientes" },
+  orSelectFolder: { en: "or select a whole folder", es: "o selecciona una carpeta completa" },
   noAnalyticsYetTitle: { en: "Nothing analyzed yet", es: "Aún no hay nada analizado" },
   noAnalyticsYetDesc: {
     en: "Upload your first statement below and this overview fills in automatically.",
