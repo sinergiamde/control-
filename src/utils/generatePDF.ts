@@ -483,7 +483,7 @@ function renderAlertsPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEn
   doc.setFont("helvetica", "normal");
 }
 
-export function generateProfessionalPDF(data: ResultsData, isEnglish = true) {
+export function generateProfessionalPDF(data: ResultsData, isEnglish = true): { blob: Blob; fileName: string } {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -519,5 +519,7 @@ export function generateProfessionalPDF(data: ResultsData, isEnglish = true) {
   doc.setLineWidth(1);
   doc.line(0, doc.internal.pageSize.getHeight() - 3, pageWidth, doc.internal.pageSize.getHeight() - 3);
 
-  doc.save(`PnL_${data.companyName?.replace(/\s+/g, "_") || "CTRL_Plus"}.pdf`);
+  const fileName = `PnL_${data.companyName?.replace(/\s+/g, "_") || "CTRL_Plus"}.pdf`;
+  doc.save(fileName);
+  return { blob: doc.output("blob"), fileName };
 }

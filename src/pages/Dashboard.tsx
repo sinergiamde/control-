@@ -238,7 +238,7 @@ const Dashboard = () => {
       });
 
       if (saved === 1 && files.length === 1 && lastResult) {
-        navigate("/results", { state: { results: lastResult, analysisId: lastAnalysisId } });
+        navigate("/results", { state: { results: lastResult, analysisId: lastAnalysisId, clientId: client?.id ?? null } });
       } else {
         navigate("/history");
       }

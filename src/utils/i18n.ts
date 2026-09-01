@@ -346,4 +346,16 @@ export const STR = {
   reassignSuccess: { en: "Transaction reassigned.", es: "Transacción reasignada." },
   reassignError: { en: "Could not reassign the transaction.", es: "No se pudo reasignar la transacción." },
   reassignSameCategory: { en: "Choose a different category to move it.", es: "Elige una categoría distinta para moverla." },
+  // Saved reports (PDF/Excel kept in storage so they can be reopened later)
+  savedReportsTitle: { en: "Saved reports", es: "Reportes guardados" },
+  savedReportsDesc: {
+    en: "Every PDF/Excel you generate is saved here too, so you can reopen it later without regenerating it.",
+    es: "Cada PDF/Excel que generas también queda guardado aquí, para que lo puedas reabrir después sin volver a generarlo.",
+  },
+  noSavedReports: { en: "No saved reports yet for this selection.", es: "Aún no hay reportes guardados para esta selección." },
+  openWord: { en: "Open", es: "Abrir" },
+  // Custom date-range calendar filter
+  customRangeLabel: { en: "Custom range…", es: "Rango personalizado…" },
+  pickDateRange: { en: "Pick a date range", es: "Elige un rango de fechas" },
+  applyWord: { en: "Apply", es: "Aplicar" },
 } satisfies Record<string, Bilingual>;

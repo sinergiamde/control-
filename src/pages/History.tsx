@@ -8,11 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Eye, Loader2, History as HistoryIcon, TrendingUp, TrendingDown, Wallet, Trash2, CalendarCheck, FileSpreadsheet, FileText, AlertTriangle } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import type { DateRange } from "react-day-picker";
+import { Eye, Loader2, History as HistoryIcon, TrendingUp, TrendingDown, Wallet, Trash2, CalendarCheck, FileSpreadsheet, FileText, AlertTriangle, FolderOpen, Download, CalendarRange } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { buildConsolidatedReport } from "@/utils/consolidateReport";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
+import { saveReportToStorage } from "@/utils/saveReport";
 import { normalizePeriod } from "@/utils/normalizePeriod";
 import { STR, tr, translateCategory, pickText } from "@/utils/i18n";
 import { ClientCombobox, type ClientOption } from "@/components/ClientCombobox";
@@ -33,6 +37,15 @@ interface AnalysisRow {
   full_analysis: any;
   client_id: string | null;
   clients: { name: string } | null;
+}
+
+interface ReportRow {
+  id: string;
+  type: "pdf" | "excel";
+  period_label: string;
+  file_name: string;
+  storage_path: string;
+  created_at: string;
 }
 
 const fmt = (n: number) =>
@@ -110,11 +123,16 @@ const History = () => {
   const [rows, setRows] = useState<AnalysisRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<RangeOption>("all");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
+  const [customRangeOpen, setCustomRangeOpen] = useState(false);
   const [clientFilter, setClientFilter] = useState<ClientOption | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [annualSummary, setAnnualSummary] = useState<{ generated_at: string; net_income: number } | null>(null);
   const [generatingAnnual, setGeneratingAnnual] = useState(false);
+  const [savedReports, setSavedReports] = useState<ReportRow[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [openingReportId, setOpeningReportId] = useState<string | null>(null);
 
   const fetchRows = async () => {
     if (!user) return;
@@ -144,13 +162,19 @@ const History = () => {
     return Array.from(s).sort().reverse();
   }, [rows]);
 
+  const fmtDate = (d: Date) => d.toLocaleDateString(isEnglish ? "en-US" : "es-CO", { year: "numeric", month: "short", day: "numeric" });
+
   const rangeLabel = useMemo(() => {
     if (range === "all") return tr(STR.allYears, isEnglish);
     if (range === "last3") return tr(STR.lastQuarter, isEnglish);
     if (range === "last6") return tr(STR.last6Months, isEnglish);
+    if (range === "custom") {
+      if (customRange?.from && customRange?.to) return `${fmtDate(customRange.from)} – ${fmtDate(customRange.to)}`;
+      return tr(STR.customRangeLabel, isEnglish);
+    }
     if (range === previousYear) return `${tr(STR.previousYearWord, isEnglish)} (${range})`;
     return `${tr(STR.yearWord, isEnglish)} ${range}`;
-  }, [range, previousYear, isEnglish]);
+  }, [range, previousYear, isEnglish, customRange]);
 
   const fetchAnnualSummary = async () => {
     if (!user || !/^\d{4}$/.test(range)) { setAnnualSummary(null); return; }
@@ -170,6 +194,39 @@ const History = () => {
     fetchAnnualSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, range]);
+
+  /** Lists previously generated PDF/Excel files (see saveReportToStorage) so they can be reopened
+   * later instead of only living as a one-time browser download — answers "¿a quién se le va a
+   * guardar el PDF?": saved shared, filterable by client just like the statements above. */
+  const fetchSavedReports = async () => {
+    if (!user) return;
+    setLoadingReports(true);
+    let query = supabase
+      .from("reports")
+      .select("id, type, period_label, file_name, storage_path, created_at")
+      .order("created_at", { ascending: false })
+      .limit(30);
+    if (clientFilter) query = query.eq("client_id", clientFilter.id);
+    const { data } = await query;
+    setSavedReports((data as ReportRow[]) || []);
+    setLoadingReports(false);
+  };
+
+  useEffect(() => {
+    fetchSavedReports();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, clientFilter]);
+
+  const handleOpenSavedReport = async (report: ReportRow) => {
+    setOpeningReportId(report.id);
+    const { data, error } = await supabase.storage.from("reports").createSignedUrl(report.storage_path, 60);
+    setOpeningReportId(null);
+    if (error || !data?.signedUrl) {
+      toast({ title: "Error", description: error?.message || tr(STR.couldNotGenerateFile, isEnglish), variant: "destructive" });
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
+  };
 
   const handleGenerateAnnual = async () => {
     if (!/^\d{4}$/.test(range)) return;
@@ -209,8 +266,19 @@ const History = () => {
       cutoff.setMonth(cutoff.getMonth() - months);
       return result.filter((r) => new Date(r.created_at) >= cutoff);
     }
+    if (range === "custom") {
+      if (!customRange?.from) return result;
+      const start = new Date(customRange.from);
+      start.setHours(0, 0, 0, 0);
+      const end = customRange.to ? new Date(customRange.to) : new Date(customRange.from);
+      end.setHours(23, 59, 59, 999);
+      return result.filter((r) => {
+        const created = new Date(r.created_at);
+        return created >= start && created <= end;
+      });
+    }
     return result.filter((r) => getStatementYear(r) === range);
-  }, [rows, range, clientFilter]);
+  }, [rows, range, clientFilter, customRange]);
 
   const duplicatePeriodIds = useMemo(() => {
     const groups: Record<string, AnalysisRow[]> = {};
@@ -250,7 +318,7 @@ const History = () => {
   }, [filtered, isEnglish]);
 
   const viewDetail = (row: AnalysisRow) => {
-    navigate("/results", { state: { results: row.full_analysis, analysisId: row.id } });
+    navigate("/results", { state: { results: row.full_analysis, analysisId: row.id, clientId: row.client_id } });
   };
 
   const handleDownload = async (format: "excel" | "pdf") => {
@@ -263,8 +331,14 @@ const History = () => {
         profile?.name || "",
         isEnglish
       );
-      if (format === "excel") await generateProfessionalExcel(consolidated, isEnglish);
-      else generateProfessionalPDF(consolidated, isEnglish);
+      if (format === "excel") {
+        const { blob, fileName } = await generateProfessionalExcel(consolidated, isEnglish);
+        await saveReportToStorage({ blob, fileName, type: "excel", clientId: clientFilter?.id ?? null, periodLabel: rangeLabel });
+      } else {
+        const { blob, fileName } = generateProfessionalPDF(consolidated, isEnglish);
+        await saveReportToStorage({ blob, fileName, type: "pdf", clientId: clientFilter?.id ?? null, periodLabel: rangeLabel });
+      }
+      fetchSavedReports();
     } catch (err) {
       toast({
         title: "Error",
@@ -318,7 +392,10 @@ const History = () => {
                 clearLabel={tr(STR.clientFilterAllLabel, isEnglish)}
                 className="w-48"
               />
-              <Select value={range} onValueChange={setRange}>
+              <Select
+                value={range}
+                onValueChange={(v) => { setRange(v); if (v === "custom") setCustomRangeOpen(true); }}
+              >
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder={tr(STR.periodWord, isEnglish)} />
                 </SelectTrigger>
@@ -334,8 +411,35 @@ const History = () => {
                       {y === previousYear ? `${tr(STR.previousYearWord, isEnglish)} (${y})` : `${tr(STR.yearWord, isEnglish)} ${y}`}
                     </SelectItem>
                   ))}
+                  <SelectItem value="custom">{tr(STR.customRangeLabel, isEnglish)}</SelectItem>
                 </SelectContent>
               </Select>
+              {range === "custom" && (
+                <Popover open={customRangeOpen} onOpenChange={setCustomRangeOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="font-normal">
+                      <CalendarRange className="h-4 w-4 mr-1" />
+                      {customRange?.from && customRange?.to
+                        ? `${fmtDate(customRange.from)} – ${fmtDate(customRange.to)}`
+                        : tr(STR.pickDateRange, isEnglish)}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="range"
+                      selected={customRange}
+                      onSelect={setCustomRange}
+                      numberOfMonths={2}
+                      defaultMonth={customRange?.from}
+                    />
+                    <div className="flex justify-end p-2 border-t border-border">
+                      <Button size="sm" onClick={() => setCustomRangeOpen(false)} disabled={!customRange?.from || !customRange?.to}>
+                        {tr(STR.applyWord, isEnglish)}
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
               <Button
                 size="sm" variant="outline"
                 disabled={filtered.length === 0 || downloading}
@@ -525,6 +629,61 @@ const History = () => {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5 text-primary" />
+              {tr(STR.savedReportsTitle, isEnglish)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">{tr(STR.savedReportsDesc, isEnglish)}</p>
+          </CardHeader>
+          <CardContent>
+            {loadingReports ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : savedReports.length === 0 ? (
+              <p className="text-muted-foreground text-center py-6 text-sm">{tr(STR.noSavedReports, isEnglish)}</p>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {savedReports.map((report) => (
+                  <div key={report.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {report.type === "pdf" ? (
+                        <FileText className="h-4 w-4 text-destructive shrink-0" />
+                      ) : (
+                        <FileSpreadsheet className="h-4 w-4 text-primary shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm text-foreground truncate">{report.file_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {report.period_label ? `${report.period_label} • ` : ""}
+                          {new Date(report.created_at).toLocaleDateString(isEnglish ? "en-US" : "es-CO", {
+                            year: "numeric", month: "short", day: "numeric",
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm" variant="outline"
+                      disabled={openingReportId === report.id}
+                      onClick={() => handleOpenSavedReport(report)}
+                      className="shrink-0"
+                    >
+                      {openingReportId === report.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Download className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      {tr(STR.openWord, isEnglish)}
+                    </Button>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

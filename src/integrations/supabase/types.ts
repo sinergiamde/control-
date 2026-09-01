@@ -154,6 +154,57 @@ export type Database = {
         }
         Relationships: []
       }
+      reports: {
+        Row: {
+          analysis_id: string | null
+          client_id: string | null
+          created_at: string
+          created_by: string | null
+          file_name: string
+          id: string
+          period_label: string
+          storage_path: string
+          type: string
+        }
+        Insert: {
+          analysis_id?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          file_name: string
+          id?: string
+          period_label?: string
+          storage_path: string
+          type: string
+        }
+        Update: {
+          analysis_id?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          file_name?: string
+          id?: string
+          period_label?: string
+          storage_path?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reports_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reports_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           country: string | null

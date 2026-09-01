@@ -18,6 +18,7 @@ import {
 import Navbar from "@/components/Navbar";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
+import { saveReportToStorage } from "@/utils/saveReport";
 import { reconcileStatement, normalizeBankSummary } from "@/utils/reconciliation";
 import {
   FOOD_OPEX_CATEGORY,
@@ -554,6 +555,7 @@ const Results = () => {
   const { toast } = useToast();
 
   const analysisId = (location.state as any)?.analysisId as string | undefined;
+  const clientId = ((location.state as any)?.clientId as string | undefined) ?? null;
   const [rawResults, setRawResults] = useState<any>((location.state as any)?.results);
   const [reassignItem, setReassignItem] = useState<LineItem | null>(null);
   const [reassignTarget, setReassignTarget] = useState<string>("");
@@ -662,12 +664,14 @@ const Results = () => {
     }
   };
 
-  const handleDownloadExcel = () => {
-    generateProfessionalExcel(results, isEnglish);
+  const handleDownloadExcel = async () => {
+    const { blob, fileName } = await generateProfessionalExcel(results, isEnglish);
+    saveReportToStorage({ blob, fileName, type: "excel", clientId, analysisId, periodLabel: results.period || "" });
   };
 
   const handleDownloadPDF = () => {
-    generateProfessionalPDF(results, isEnglish);
+    const { blob, fileName } = generateProfessionalPDF(results, isEnglish);
+    saveReportToStorage({ blob, fileName, type: "pdf", clientId, analysisId, periodLabel: results.period || "" });
   };
 
   const summaryCards = [

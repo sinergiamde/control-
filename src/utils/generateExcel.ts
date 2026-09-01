@@ -642,7 +642,7 @@ function addAlertsSheet(wb: ExcelJS.Workbook, data: ResultsData, isEnglish: bool
   ws.getRow(r).height = 28;
 }
 
-export async function generateProfessionalExcel(data: ResultsData, isEnglish = true) {
+export async function generateProfessionalExcel(data: ResultsData, isEnglish = true): Promise<{ blob: Blob; fileName: string }> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "CTRL+ by TaxForYou";
 
@@ -659,5 +659,7 @@ export async function generateProfessionalExcel(data: ResultsData, isEnglish = t
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  saveAs(blob, `PnL_${data.companyName?.replace(/\s+/g, "_") || "CTRL_Plus"}.xlsx`);
+  const fileName = `PnL_${data.companyName?.replace(/\s+/g, "_") || "CTRL_Plus"}.xlsx`;
+  saveAs(blob, fileName);
+  return { blob, fileName };
 }
