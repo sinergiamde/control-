@@ -33,13 +33,27 @@ const SidebarLink = ({ item, active, onClick }: { item: NavItem; active: boolean
  * (--sidebar-*, already defined in index.css/tailwind.config from the original scaffold) instead
  * of cloning Bond's colors. Scoped to Dashboard for now — History/Clients/Results keep the
  * existing top Navbar until this direction is confirmed, then it's a small lift to extend. */
-const AppSidebar = ({ children }: { children: ReactNode }) => {
+interface AppSidebarProps {
+  children: ReactNode;
+  /** When set, every navigation/logout action first confirms with this message — used by Dashboard
+   * to stop an in-progress upload (files picked, not yet analyzed) from silently vanishing when the
+   * page unmounts on route change. Undefined/empty means "nothing to lose, navigate freely." */
+  confirmBeforeLeave?: string;
+}
+
+const AppSidebar = ({ children, confirmBeforeLeave }: AppSidebarProps) => {
   const { lang, setLang, t } = useLanguage();
   const { user, profile, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
+  const guardedNavigate = (to: string) => {
+    if (confirmBeforeLeave && !window.confirm(confirmBeforeLeave)) return;
+    navigate(to);
+  };
+
   const handleLogout = async () => {
+    if (confirmBeforeLeave && !window.confirm(confirmBeforeLeave)) return;
     await logout();
     navigate("/");
   };
@@ -70,7 +84,7 @@ const AppSidebar = ({ children }: { children: ReactNode }) => {
               Workspace
             </p>
             {workspaceItems.map((item) => (
-              <SidebarLink key={item.to} item={item} active={location.pathname === item.to} onClick={() => navigate(item.to)} />
+              <SidebarLink key={item.to} item={item} active={location.pathname === item.to} onClick={() => guardedNavigate(item.to)} />
             ))}
           </div>
 
@@ -79,7 +93,7 @@ const AppSidebar = ({ children }: { children: ReactNode }) => {
               Records
             </p>
             {recordItems.map((item) => (
-              <SidebarLink key={item.to} item={item} active={location.pathname === item.to} onClick={() => navigate(item.to)} />
+              <SidebarLink key={item.to} item={item} active={location.pathname === item.to} onClick={() => guardedNavigate(item.to)} />
             ))}
           </div>
 
@@ -91,7 +105,7 @@ const AppSidebar = ({ children }: { children: ReactNode }) => {
               <SidebarLink
                 item={{ to: "/admin", icon: ShieldCheck, label: t("adminPanel") }}
                 active={location.pathname === "/admin"}
-                onClick={() => navigate("/admin")}
+                onClick={() => guardedNavigate("/admin")}
               />
             </div>
           )}

@@ -380,6 +380,10 @@ export const STR = {
   expenseMixTitle: { en: "Expense mix", es: "Distribución de gastos" },
   expenseMixDesc: { en: "All-time, across every client", es: "Histórico, de todos los clientes" },
   orSelectFolder: { en: "or select a whole folder", es: "o selecciona una carpeta completa" },
+  confirmLeaveWithFiles: {
+    en: "You have file(s) added but not analyzed yet. Leaving this screen loses them (no cost/analysis has happened yet, but you'll have to add them again). Continue?",
+    es: "Tienes archivo(s) agregados que aún no se han analizado. Si sales de esta pantalla se pierden (no se ha gastado ni analizado nada todavía, pero tendrás que volver a agregarlos). ¿Continuar?",
+  },
   noAnalyticsYetTitle: { en: "Nothing analyzed yet", es: "Aún no hay nada analizado" },
   noAnalyticsYetDesc: {
     en: "Upload your first statement below and this overview fills in automatically.",

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -260,8 +260,24 @@ const Dashboard = () => {
       } else {
         navigate("/history");
       }
+      setFiles([]); // nothing left pending -- clears the "unsaved files" navigation guard too
     }
   };
+
+  // Files picked here live only in this component's state -- navigating away (even just clicking
+  // another sidebar link) unmounts Dashboard and silently drops them, which reads as "the file I
+  // uploaded disappeared." Guard both real page unloads (refresh/close tab) and in-app navigation
+  // (passed to AppSidebar below) while there's something un-analyzed to lose.
+  const hasPendingFiles = files.length > 0;
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!hasPendingFiles) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasPendingFiles]);
 
   if (authLoading) {
     return (
@@ -282,7 +298,7 @@ const Dashboard = () => {
   const displayName = profile?.name || user.email?.split("@")[0] || t("userFallback");
 
   return (
-    <AppSidebar>
+    <AppSidebar confirmBeforeLeave={hasPendingFiles ? tr(STR.confirmLeaveWithFiles, isEnglish) : undefined}>
       <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto w-full">
         <div className="mb-6 opacity-0 animate-fade-in">
           <div className="flex items-center gap-4 mb-3">
