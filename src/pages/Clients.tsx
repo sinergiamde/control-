@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Pencil, Trash2, Check, X, Building2, Search } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Check, X, Building2, Search, CalendarRange } from "lucide-react";
 
 interface ClientRow {
   id: string;
@@ -252,6 +252,14 @@ const Clients = () => {
                           </span>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            size="sm" variant="outline"
+                            onClick={() => navigate("/history", { state: { clientId: client.id, clientName: client.name } })}
+                            className="text-primary hover:text-primary hover:bg-primary/10"
+                          >
+                            <CalendarRange className="h-4 w-4 mr-1" />
+                            {t("viewHistoryWord")}
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => startEdit(client)}
                             className="text-muted-foreground hover:text-primary hover:bg-primary/10">
                             <Pencil className="h-4 w-4" />

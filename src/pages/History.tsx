@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -119,13 +119,20 @@ const History = () => {
   const { lang } = useLanguage();
   const isEnglish = lang === "en";
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [rows, setRows] = useState<AnalysisRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<RangeOption>("all");
   const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
   const [customRangeOpen, setCustomRangeOpen] = useState(false);
-  const [clientFilter, setClientFilter] = useState<ClientOption | null>(null);
+  // Arriving from a client's "History" button (Clients page) pre-selects that client here, with
+  // the download card + calendar already sitting right at the top ready to use.
+  const incomingClientId = (location.state as any)?.clientId as string | undefined;
+  const incomingClientName = (location.state as any)?.clientName as string | undefined;
+  const [clientFilter, setClientFilter] = useState<ClientOption | null>(
+    incomingClientId && incomingClientName ? { id: incomingClientId, name: incomingClientName } : null
+  );
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [annualSummary, setAnnualSummary] = useState<{ generated_at: string; net_income: number } | null>(null);

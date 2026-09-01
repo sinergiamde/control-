@@ -84,6 +84,7 @@ const translations = {
     confirmDeleteClient: "Delete this client? This cannot be undone.",
     clientNameEmptyError: "Enter a client name.",
     searchClientsPlaceholder: "Search clients...",
+    viewHistoryWord: "History",
   },
   es: {
     brand: "CTRL+",
@@ -166,6 +167,7 @@ const translations = {
     confirmDeleteClient: "¿Eliminar este cliente? Esto no se puede deshacer.",
     clientNameEmptyError: "Escribe un nombre de cliente.",
     searchClientsPlaceholder: "Buscar clientes...",
+    viewHistoryWord: "Historial",
   },
 };
 
