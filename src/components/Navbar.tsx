@@ -54,7 +54,7 @@ const Navbar = () => {
               lang === "es" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}
           >
-            <span className="text-base leading-none">🇨🇴</span> ES
+            <span className="text-base leading-none">🇪🇸</span> ES
           </button>
         </div>
 
