@@ -5,7 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, FileText, Loader2, CheckCircle2, Sparkles } from "lucide-react";
-import Navbar from "@/components/Navbar";
+import AppSidebar from "@/components/AppSidebar";
+import DashboardAnalytics from "@/components/DashboardAnalytics";
 import ChatBot from "@/components/ChatBot";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -264,10 +265,9 @@ const Dashboard = () => {
   const displayName = profile?.name || user.email?.split("@")[0] || t("userFallback");
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Navbar />
-      <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full">
-        <div className="mb-8 opacity-0 animate-fade-in">
+    <AppSidebar>
+      <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto w-full">
+        <div className="mb-6 opacity-0 animate-fade-in">
           <div className="flex items-center gap-4 mb-3">
             <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center animate-pulse-glow">
               <Sparkles className="h-7 w-7 text-primary" />
@@ -281,6 +281,8 @@ const Dashboard = () => {
           </div>
           <div className="section-divider mt-4" />
         </div>
+
+        <DashboardAnalytics isEnglish={isEnglish} noClientLabel={tr(STR.noClientLabel, isEnglish)} />
 
         <div className="grid grid-cols-3 gap-3 mb-6 opacity-0 animate-slide-up stagger-2">
           {[
@@ -419,7 +421,7 @@ const Dashboard = () => {
         </Card>
       </div>
       <ChatBot />
-    </div>
+    </AppSidebar>
   );
 };
 

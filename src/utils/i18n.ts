@@ -365,4 +365,19 @@ export const STR = {
     es: "Elige el cliente y el mes (o rango de fechas, con el calendario) que quieras, y descarga.",
   },
   whichMonthLabel: { en: "Which month?", es: "¿Qué mes?" },
+  // Dashboard analytics overview (KPI cards + charts)
+  analyticsOverview: { en: "Overview", es: "Resumen general" },
+  kpiTotalRevenue: { en: "Total revenue analyzed", es: "Ingresos totales analizados" },
+  kpiTotalExpenses: { en: "Total expenses analyzed", es: "Gastos totales analizados" },
+  kpiActiveClients: { en: "Active clients", es: "Clientes activos" },
+  kpiStatementsAnalyzed: { en: "Statements analyzed", es: "Extractos analizados" },
+  revenueByClientTitle: { en: "Revenue by client", es: "Ingresos por cliente" },
+  revenueByClientDesc: { en: "Top clients, all-time revenue", es: "Principales clientes, ingresos históricos" },
+  expenseMixTitle: { en: "Expense mix", es: "Distribución de gastos" },
+  expenseMixDesc: { en: "All-time, across every client", es: "Histórico, de todos los clientes" },
+  noAnalyticsYetTitle: { en: "Nothing analyzed yet", es: "Aún no hay nada analizado" },
+  noAnalyticsYetDesc: {
+    en: "Upload your first statement below and this overview fills in automatically.",
+    es: "Sube tu primer extracto abajo y este resumen se llena automáticamente.",
+  },
 } satisfies Record<string, Bilingual>;
