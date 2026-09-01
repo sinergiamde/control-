@@ -1,7 +1,7 @@
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, ShieldCheck, LayoutDashboard, History } from "lucide-react";
+import { LogOut, ShieldCheck, LayoutDashboard, History, Building2 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 const Navbar = () => {
@@ -85,6 +85,15 @@ const Navbar = () => {
                 )}
               </Button>
             )}
+
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => navigate("/clients")}
+              className="text-muted-foreground hover:text-primary hover:bg-primary/10 hover:scale-105 transition-all duration-200"
+            >
+              <Building2 className="h-4 w-4 mr-1" />
+              <span className="hidden sm:inline">{t("clientsNav")}</span>
+            </Button>
 
             <Button
               variant="ghost" size="sm"
