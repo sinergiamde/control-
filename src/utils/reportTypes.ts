@@ -84,26 +84,6 @@ export interface KPI {
   description: string;
 }
 
-export interface ResultsData {
-  companyName?: string;
-  period?: string;
-  totalRevenue: number;
-  totalCOGS: number;
-  grossProfit: number;
-  totalOpex: number;
-  totalFood?: number;
-  ebitda: number;
-  totalPersonal: number;
-  netIncome: number;
-  sections: Section[];
-  kpis: KPI[];
-  redFlags?: string[];
-  thirdPartyPayments?: ThirdPartyPayment[];
-  thirdPartyBuckets?: ThirdPartyBuckets;
-  bankSummary?: BankSummary;
-  reconciliation?: ReconciliationResult;
-}
-
 /** The raw array a transaction lives in inside analyze-statement's response (`analysis.revenues`,
  * `analysis.cogs`, etc.) — used by the "reassign transaction" feature to know exactly where to
  * remove/re-insert an item when the user moves it to a different category. */
@@ -133,6 +113,109 @@ export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
     "Personal bank transfer", "Health / personal services", "Meals (restaurant/bar)", "Other personal (specify)",
   ],
 };
+
+const TRANSACTION_LISTS: TransactionList[] = ["revenues", "cogs", "opex", "fees", "personal"];
+
+/** Canonical list for every category string in REASSIGN_TAXONOMY (e.g. "Fuel (work)" -> "cogs"),
+ * derived from that taxonomy so the two can't drift apart. */
+const CANONICAL_LIST_BY_CATEGORY: Record<string, TransactionList> = Object.fromEntries(
+  (Object.keys(REASSIGN_TAXONOMY) as TransactionList[]).flatMap((list) =>
+    REASSIGN_TAXONOMY[list].map((category) => [category, list] as const)
+  )
+);
+
+const looseNumber = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.abs(value);
+  if (typeof value === "string") {
+    const n = Number(value.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(n) ? Math.abs(n) : 0;
+  }
+  return 0;
+};
+
+const transactionSignature = (item: any): string => {
+  const date = String(item?.date || "").trim().toLowerCase();
+  const amt = looseNumber(item?.amt ?? item?.amount);
+  const desc = String(item?.desc || item?.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return `${date}|${amt.toFixed(2)}|${desc}`;
+};
+
+/** Cleans up one statement's raw AI output before anything totals, stores, or renders it:
+ *  1) De-duplicates transactions the AI accidentally classified into two different lists (same
+ *     date + amount + description) — keeps the first occurrence, drops the rest, so the same
+ *     dollar amount never gets counted twice toward expenses/income.
+ *  2) Re-buckets any item whose `category` doesn't match the list it's sitting in (e.g. a "Fuel
+ *     (work)" item that landed in `opex` one month and `cogs` another) into its one canonical list
+ *     per REASSIGN_TAXONOMY, so the same category always rolls up into the same P&L section no
+ *     matter which statement/month it came from.
+ * Mutates `source` in place (the revenues/cogs/opex/fees/personal arrays) and returns
+ * human-readable notes about anything it changed (empty arrays if nothing needed fixing) — call
+ * this once, as early as possible, on every raw analyze-statement response, before computing any
+ * totals or persisting/rendering anything from it. Idempotent: running it twice on already-clean
+ * data is a no-op. */
+export const normalizeAnalysisTransactions = (source: any): { notesEn: string[]; notesEs: string[] } => {
+  const notesEn: string[] = [];
+  const notesEs: string[] = [];
+  if (!source || typeof source !== "object") return { notesEn, notesEs };
+
+  const seen = new Set<string>();
+  for (const list of TRANSACTION_LISTS) {
+    if (!Array.isArray(source[list])) continue;
+    const kept: any[] = [];
+    for (const item of source[list]) {
+      const desc = String(item?.desc || item?.name || "").trim();
+      const amt = looseNumber(item?.amt ?? item?.amount);
+      const isBlank = !desc && amt === 0;
+      const sig = transactionSignature(item);
+      if (!isBlank && seen.has(sig)) {
+        notesEn.push(`Removed a duplicate transaction found in more than one category: "${desc || "?"}" (${item?.date || "?"}, $${amt.toFixed(2)}) — kept only the first occurrence.`);
+        notesEs.push(`Se eliminó una transacción duplicada encontrada en más de una categoría: "${desc || "?"}" (${item?.date || "?"}, $${amt.toFixed(2)}) — se conservó solo la primera aparición.`);
+        continue;
+      }
+      if (!isBlank) seen.add(sig);
+      kept.push(item);
+    }
+    source[list] = kept;
+  }
+
+  const rebucketed: Record<TransactionList, any[]> = { revenues: [], cogs: [], opex: [], fees: [], personal: [] };
+  for (const list of TRANSACTION_LISTS) {
+    for (const item of Array.isArray(source[list]) ? source[list] : []) {
+      const canonical = item?.category ? CANONICAL_LIST_BY_CATEGORY[item.category] : undefined;
+      if (canonical && canonical !== list) {
+        rebucketed[canonical].push(item);
+        const desc = item?.desc || item?.name || "?";
+        notesEn.push(`Moved "${desc}" (category "${item.category}") from ${list} to ${canonical} for consistency with other statements.`);
+        notesEs.push(`Se movió "${desc}" (categoría "${item.category}") de ${list} a ${canonical} para que sea consistente con los demás extractos.`);
+      } else {
+        rebucketed[list].push(item);
+      }
+    }
+  }
+  for (const list of TRANSACTION_LISTS) source[list] = rebucketed[list];
+
+  return { notesEn, notesEs };
+};
+
+export interface ResultsData {
+  companyName?: string;
+  period?: string;
+  totalRevenue: number;
+  totalCOGS: number;
+  grossProfit: number;
+  totalOpex: number;
+  totalFood?: number;
+  ebitda: number;
+  totalPersonal: number;
+  netIncome: number;
+  sections: Section[];
+  kpis: KPI[];
+  redFlags?: string[];
+  thirdPartyPayments?: ThirdPartyPayment[];
+  thirdPartyBuckets?: ThirdPartyBuckets;
+  bankSummary?: BankSummary;
+  reconciliation?: ReconciliationResult;
+}
 
 export const FOOD_OPEX_CATEGORY = "Meals (work — fast food/coffee/snacks)";
 export const PERSONAL_TRANSFER_CATEGORY = "Personal bank transfer";

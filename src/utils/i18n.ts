@@ -162,6 +162,10 @@ export const STR = {
   accountActivity: { en: "ACCOUNT ACTIVITY (per bank statement)", es: "ACTIVIDAD DE LA CUENTA (según extracto bancario)" },
   beginningBalance: { en: "Beginning Balance", es: "Saldo Inicial" },
   endingBalance: { en: "Ending Balance", es: "Saldo Final" },
+  balanceVsNetIncomeNote: {
+    en: "Beginning Balance + Net Result = Ending Balance. A negative Net Result just means this period's expenses were higher than its income — the account can still end in the positive if it started with enough cash carried over from before.",
+    es: "Saldo Inicial + Resultado Neto = Saldo Final. Un Resultado Neto negativo solo significa que los gastos de este período fueron mayores que el ingreso — la cuenta puede terminar en positivo si tenía suficiente saldo acumulado de antes.",
+  },
   totalDeposits: { en: "Total Deposits and Additions", es: "Total Depósitos y Adiciones" },
   totalWithdrawals: { en: "Total Withdrawals", es: "Total Retiros" },
   periodResult: { en: "Period Result (Net Change in Cash)", es: "Resultado del Período (Cambio Neto en Caja)" },
@@ -334,6 +338,10 @@ export const STR = {
     es: "Selecciona o crea el cliente al que pertenece este extracto, para que no se mezcle con los extractos de otros clientes.",
   },
   clientFilterAllLabel: { en: "All clients", es: "Todos los clientes" },
+  clientRequiredForAnnual: {
+    en: "Pick a client above to view or generate its annual summary — an annual summary belongs to one client.",
+    es: "Selecciona un cliente arriba para ver o generar su resumen anual — un resumen anual pertenece a un solo cliente.",
+  },
   clientColumnLabel: { en: "Client", es: "Cliente" },
   noClientLabel: { en: "No client", es: "Sin cliente" },
   // Transaction re-assignment ("this was actually a payment to Luisa, a contractor")

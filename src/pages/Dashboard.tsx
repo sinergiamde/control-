@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ClientCombobox, type ClientOption } from "@/components/ClientCombobox";
 import { STR, tr } from "@/utils/i18n";
+import { normalizeAnalysisTransactions } from "@/utils/reportTypes";
 
 const ANALYZE_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-statement`;
 
@@ -157,6 +158,18 @@ const Dashboard = () => {
     if (user) {
       const src: any = getAnalysisSource(data);
       const period = src.period || "";
+
+      // Clean up the AI's raw classification before anything totals it: drops a transaction the
+      // AI accidentally put in two categories at once (double-counting real dollars), and moves
+      // anything sitting in the wrong section (e.g. "Fuel (work)" landing in opex one month and
+      // cogs the next) to its one canonical section, so the same category always rolls up the
+      // same way regardless of which statement it came from.
+      const { notesEn, notesEs } = normalizeAnalysisTransactions(src);
+      if (notesEn.length > 0) {
+        const legacyAlerts = Array.isArray(src.alerts) ? src.alerts : [];
+        src.alerts_en = [...(Array.isArray(src.alerts_en) ? src.alerts_en : legacyAlerts), ...notesEn];
+        src.alerts_es = [...(Array.isArray(src.alerts_es) ? src.alerts_es : legacyAlerts), ...notesEs];
+      }
 
       const revenues = Array.isArray(src?.revenues) ? src.revenues : [];
       const cogs = Array.isArray(src?.cogs) ? src.cogs : [];

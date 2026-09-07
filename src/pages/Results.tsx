@@ -25,6 +25,7 @@ import {
   PERSONAL_TRANSFER_CATEGORY,
   PERSONAL_THIRD_PARTY_CATEGORIES,
   REASSIGN_TAXONOMY,
+  normalizeAnalysisTransactions,
   type SectionKind,
   type ThirdPartyPayment,
   type ThirdPartyBuckets,
@@ -297,6 +298,19 @@ const formatPercentText = (value: number, total: number) => `${toPercent(value, 
 
 const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
   const source = raw?.analysis ?? raw;
+
+  // Defensive cleanup applied at render time too (not just at analyze-time in Dashboard.tsx) so
+  // statements already stored with the bug — a transaction double-classified into two categories,
+  // or a category like "Fuel (work)" landing in a different section from one month to the next —
+  // self-correct the moment they're viewed again, with no need to re-upload or re-analyze them.
+  if (Array.isArray(source?.revenues) || Array.isArray(source?.cogs) || Array.isArray(source?.opex) || Array.isArray(source?.fees) || Array.isArray(source?.personal)) {
+    const { notesEn, notesEs } = normalizeAnalysisTransactions(source);
+    if (notesEn.length > 0) {
+      const legacyAlerts = Array.isArray(source.alerts) ? source.alerts : [];
+      source.alerts_en = [...(Array.isArray(source.alerts_en) ? source.alerts_en : legacyAlerts), ...notesEn];
+      source.alerts_es = [...(Array.isArray(source.alerts_es) ? source.alerts_es : legacyAlerts), ...notesEs];
+    }
+  }
 
   if (source?.sections && Array.isArray(source.sections)) {
     const sections = source.sections.map((s: any, i: number) => ({
@@ -717,6 +731,32 @@ const Results = () => {
             </Button>
           </div>
         </div>
+
+        {results.bankSummary?.found && results.bankSummary.beginningBalance !== null && results.bankSummary.endingBalance !== null && (
+          <Card className="neon-border bg-card shadow-xl mb-6 opacity-0 animate-fade-in" style={{ animationDelay: "0.25s" }}>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-xs text-muted-foreground">{tr(STR.beginningBalance, isEnglish)}</p>
+                  <p className="text-lg font-bold text-foreground">${results.bankSummary.beginningBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{tr(STR.netIncomeShort, isEnglish)}</p>
+                  <p className={`text-lg font-bold ${results.netIncome >= 0 ? "text-primary" : "text-destructive"}`}>
+                    {results.netIncome >= 0 ? "+" : ""}${results.netIncome.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{tr(STR.endingBalance, isEnglish)}</p>
+                  <p className="text-lg font-bold text-foreground">${results.bankSummary.endingBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground text-center mt-3">
+                {tr(STR.balanceVsNetIncomeNote, isEnglish)}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {results.reconciliation?.bankSummaryFound && (
           <div

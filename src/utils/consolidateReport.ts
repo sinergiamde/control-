@@ -1,6 +1,7 @@
 import { reconcileStatement } from "./reconciliation";
-import { FOOD_OPEX_CATEGORY, PERSONAL_TRANSFER_CATEGORY, PERSONAL_THIRD_PARTY_CATEGORIES, type LineItem, type ThirdPartyPayment } from "./reportTypes";
+import { FOOD_OPEX_CATEGORY, PERSONAL_TRANSFER_CATEGORY, PERSONAL_THIRD_PARTY_CATEGORIES, normalizeAnalysisTransactions, type LineItem, type ThirdPartyPayment } from "./reportTypes";
 import { STR, tr, translateCategory, pickText, pickArray } from "./i18n";
+import { normalizePeriod } from "./normalizePeriod";
 
 const toNumber = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) return Math.abs(value);
@@ -48,8 +49,30 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
   let statementsOk = 0;
   const problemPeriods: string[] = [];
 
-  for (const data of allData) {
+  // Process statements in calendar order (oldest first), not upload order — `allData` normally
+  // arrives newest-upload-first straight from History's query, so without this a 12-statement
+  // annual report would label itself something like "Apr – Sep" instead of "Jan – Dec" depending
+  // on the order the client happened to upload them in. `normalizePeriod` turns whatever the AI
+  // wrote ("January 2025", "01/2025", ...) into a sortable "YYYY-MM" key when it can.
+  const sortedData = [...allData].sort((a, b) => {
+    const pa = normalizePeriod(pickText(getAnalysisSource(a), "period", isEnglish) || "");
+    const pb = normalizePeriod(pickText(getAnalysisSource(b), "period", isEnglish) || "");
+    return pa.localeCompare(pb);
+  });
+
+  for (const data of sortedData) {
     const src = getAnalysisSource(data);
+
+    // Same cleanup analyze-time/render-time apply — a consolidated/annual report is built straight
+    // from each statement's stored full_analysis, so it needs the same duplicate-removal and
+    // category rebucketing or it would inherit whatever wasn't yet cleaned up in that row.
+    const { notesEn, notesEs } = normalizeAnalysisTransactions(src);
+    if (notesEn.length > 0) {
+      const legacyAlerts = Array.isArray(src.alerts) ? src.alerts : [];
+      src.alerts_en = [...(Array.isArray(src.alerts_en) ? src.alerts_en : legacyAlerts), ...notesEn];
+      src.alerts_es = [...(Array.isArray(src.alerts_es) ? src.alerts_es : legacyAlerts), ...notesEs];
+    }
+
     const period = pickText(src, "period", isEnglish);
 
     addToCategoryMap(revenueMap, src?.revenues, isEnglish);
@@ -149,7 +172,9 @@ export const buildConsolidatedReport = (allData: any[], companyName: string, isE
 
   return {
     companyName,
-    period: periods.length ? `${periods[periods.length - 1]} – ${periods[0]} (${periods.length} ${isEnglish ? "statements" : "extractos"})` : "",
+    // periods is now populated oldest-to-newest (see sortedData above), so [0] is the earliest
+    // statement and [length-1] the latest.
+    period: periods.length ? `${periods[0]} – ${periods[periods.length - 1]} (${periods.length} ${isEnglish ? "statements" : "extractos"})` : "",
     totalRevenue,
     totalCOGS,
     grossProfit,

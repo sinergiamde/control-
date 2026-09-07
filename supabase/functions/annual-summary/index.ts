@@ -18,7 +18,9 @@ const addCategory = (categories: Record<string, number>, name: string, amount: u
 };
 
 type AnalysisRow = {
-  user_id: string;
+  client_id: string | null;
+  period: string | null;
+  original_filename: string | null;
   revenues_total: number | null;
   cogs_total: number | null;
   opex_total: number | null;
@@ -28,12 +30,26 @@ type AnalysisRow = {
   created_at: string;
 };
 
-/** Summarizes one user's rows for one calendar year (Jan 1 -> Dec 31) and upserts the result.
- * Shared by both the yearly cron sweep and the on-demand single-user path below so the two never
- * drift out of sync on what "the annual summary" actually contains. */
+/** Which calendar year a statement is actually FOR — never the row's `created_at` (upload time).
+ * A client can (and often does) upload all 12 months of a year in one sitting, long after that
+ * year ended; filtering by created_at would find zero rows for the very year being requested.
+ * Mirrors History.tsx's getStatementYear so both sides agree on which bucket a statement lands in. */
+const getStatementYear = (row: AnalysisRow): string => {
+  const source = (row.full_analysis as any)?.analysis ?? row.full_analysis;
+  const candidates = [source?.annualYear, source?.year, source?.period, row.period, row.original_filename];
+  for (const candidate of candidates) {
+    const match = String(candidate || "").match(/20\d{2}|19\d{2}/);
+    if (match) return match[0];
+  }
+  return new Date(row.created_at).getUTCFullYear().toString();
+};
+
+/** Summarizes one client's rows for one calendar year and upserts the result. Shared by both the
+ * yearly cron sweep and the on-demand single-client path below so the two never drift apart on
+ * what "the annual summary" actually contains. */
 async function summarizeYear(
   supabase: ReturnType<typeof createClient>,
-  userId: string,
+  clientId: string | null,
   year: number,
   rows: AnalysisRow[]
 ) {
@@ -63,7 +79,7 @@ async function summarizeYear(
     .from("annual_summaries")
     .upsert(
       {
-        user_id: userId,
+        client_id: clientId,
         year,
         revenues_total: totals.revenues,
         cogs_total: totals.cogs,
@@ -75,7 +91,7 @@ async function summarizeYear(
         statements_count: rows.length,
         generated_at: new Date().toISOString(),
       },
-      { onConflict: "user_id,year" }
+      { onConflict: "client_id,year" }
     );
 
   if (upsertError) throw upsertError;
@@ -91,7 +107,7 @@ serve(async (req) => {
     const CRON_SECRET = Deno.env.get("CRON_SECRET");
     const cronSecretHeader = req.headers.get("x-cron-secret");
 
-    // Path 1: the yearly cron sweep — uses the service-role key to read/rewrite EVERY user's
+    // Path 1: the yearly cron sweep — uses the service-role key to read/rewrite EVERY client's
     // data, bypassing RLS, so it must only ever run from our own pg_cron schedule.
     if (cronSecretHeader) {
       if (!CRON_SECRET || cronSecretHeader !== CRON_SECRET) {
@@ -102,44 +118,45 @@ serve(async (req) => {
       }
 
       const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-      const targetYear = new Date().getUTCFullYear() - 1;
-      const yearStart = `${targetYear}-01-01T00:00:00Z`;
-      const yearEnd = `${targetYear + 1}-01-01T00:00:00Z`;
+      const targetYear = (new Date().getUTCFullYear() - 1).toString();
 
+      // No created_at filter here on purpose (see getStatementYear above) — a statement FOR last
+      // year may well have been uploaded well into this year. Group everything by (client_id,
+      // statement year) and only summarize the groups matching targetYear.
       const { data: rows, error } = await supabase
         .from("analyses")
-        .select("user_id, revenues_total, cogs_total, opex_total, personal_total, fees_total, full_analysis, created_at")
-        .gte("created_at", yearStart)
-        .lt("created_at", yearEnd);
+        .select("client_id, period, original_filename, revenues_total, cogs_total, opex_total, personal_total, fees_total, full_analysis, created_at");
       if (error) throw error;
 
-      const byUser = new Map<string, AnalysisRow[]>();
+      const byClient = new Map<string, AnalysisRow[]>();
       for (const row of (rows || []) as AnalysisRow[]) {
-        const arr = byUser.get(row.user_id) || [];
+        if (getStatementYear(row) !== targetYear) continue;
+        const key = row.client_id || "none";
+        const arr = byClient.get(key) || [];
         arr.push(row);
-        byUser.set(row.user_id, arr);
+        byClient.set(key, arr);
       }
 
       let generated = 0;
-      for (const [userId, userRows] of byUser.entries()) {
+      for (const [key, clientRows] of byClient.entries()) {
         try {
-          await summarizeYear(supabase, userId, targetYear, userRows);
+          await summarizeYear(supabase, key === "none" ? null : key, Number(targetYear), clientRows);
           generated++;
         } catch (err) {
-          console.error(`annual-summary upsert failed for user ${userId}:`, err instanceof Error ? err.message : err);
+          console.error(`annual-summary upsert failed for client ${key}:`, err instanceof Error ? err.message : err);
         }
       }
 
-      return new Response(JSON.stringify({ year: targetYear, users_summarized: generated }), {
+      return new Response(JSON.stringify({ year: Number(targetYear), clients_summarized: generated }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Path 2: on-demand, self-service — a logged-in user asking "(re)generate MY annual summary
-    // for year X" from the History page, instead of waiting on the once-a-year cron. Identity is
-    // verified against the caller's own JWT; the service-role key is only ever used to read/write
-    // that one verified user's own rows, never anyone else's.
+    // Path 2: on-demand, self-service — a logged-in user asking "(re)generate the annual summary
+    // for client X, year Y" from the History page, instead of waiting on the once-a-year cron.
+    // Identity is verified against the caller's own JWT; the service-role key is only ever used to
+    // read/write that one client's own rows.
     const authHeader = req.headers.get("Authorization") || "";
     const supabaseAuth = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
@@ -154,6 +171,7 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const year = Number(body?.year);
+    const clientId = typeof body?.client_id === "string" ? body.client_id : null;
     const currentYear = new Date().getUTCFullYear();
     if (!Number.isInteger(year) || year < 2000 || year > currentYear) {
       return new Response(JSON.stringify({ error: "Invalid year" }), {
@@ -161,20 +179,22 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (!clientId) {
+      return new Response(JSON.stringify({ error: "client_id is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-    const yearStart = `${year}-01-01T00:00:00Z`;
-    const yearEnd = `${year + 1}-01-01T00:00:00Z`;
-
     const { data: rows, error } = await supabase
       .from("analyses")
-      .select("user_id, revenues_total, cogs_total, opex_total, personal_total, fees_total, full_analysis, created_at")
-      .eq("user_id", user.id)
-      .gte("created_at", yearStart)
-      .lt("created_at", yearEnd);
+      .select("client_id, period, original_filename, revenues_total, cogs_total, opex_total, personal_total, fees_total, full_analysis, created_at")
+      .eq("client_id", clientId);
     if (error) throw error;
 
-    const result = await summarizeYear(supabase, user.id, year, (rows || []) as AnalysisRow[]);
+    const yearRows = ((rows || []) as AnalysisRow[]).filter((r) => getStatementYear(r) === String(year));
+    const result = await summarizeYear(supabase, clientId, year, yearRows);
 
     return new Response(JSON.stringify({ year, ...result }), {
       status: 200,
