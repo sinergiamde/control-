@@ -33,5 +33,9 @@ supabase/.temp/
 # Claude Code session state
 .claude/
 
+# Client bank statements dropped here for me to inspect directly — never commit real financial
+# documents to the repo.
+_client-statements/
+
 .vercel
 .env*
