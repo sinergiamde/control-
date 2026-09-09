@@ -97,11 +97,11 @@ export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
   revenues: ["Bank transfer", "Wire transfer", "Zelle", "Check", "Cash deposit", "Other income (specify)"],
   cogs: [
     "Materials", "Supplies", "Storage", "Startup and moving costs", "Subcontractor costs",
-    "Fuel (work)", "Tolls (work)", "Permits",
+    "Tolls (work)", "Permits",
   ],
   opex: [
     "Payroll", "Rent (lease or mortgage)", "Utilities (electric/water)", "Internet", "Business insurance",
-    "Parking", "Car insurance", "Car payment", "Repairs and maintenance", "Vehicle expenses",
+    "Fuel (work)", "Parking", "Car insurance", "Car payment", "Repairs and maintenance", "Vehicle expenses",
     "Marketing and advertising", "Subscriptions and membership dues", "Business software",
     "Website and hosting", "Training and development", "Licenses and permits", "Legal and compliance fees",
     "Professional services", "Office supplies", "Office furniture and equipment", "Operating costs",

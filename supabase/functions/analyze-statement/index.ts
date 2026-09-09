@@ -33,7 +33,6 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 - "Storage"
 - "Startup and moving costs"
 - "Subcontractor costs"
-- "Fuel (work)"
 - "Tolls (work)"
 - "Permits"
 
@@ -43,6 +42,7 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 - "Utilities (electric/water)"
 - "Internet"
 - "Business insurance"
+- "Fuel (work)"
 - "Parking"
 - "Car insurance"
 - "Car payment"
@@ -82,6 +82,8 @@ REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada lab
 REGLA DE TRANSFERENCIAS PERSONALES (importante): toda transferencia electrónica ("Online Transfer", "Electronic Withdrawal", transferencia a otra cuenta propia, etc.) sin justificación de negocio clara → PERSONAL con category "Personal bank transfer". En los campos "detail_en" y "detail_es" indica el destino/origen tal como aparece en el extracto (nombre del beneficiario, banco/cuenta destino, o "transfer to own account"/"transferencia a cuenta propia") — esto es indispensable para poder rastrear cada transferencia individualmente, ninguna puede quedar sin ese detalle.
 
 REGLA DE TRANSFERENCIAS ENTRANTES Y AVANCES DE LÍNEA DE CRÉDITO (importante, NUNCA la saltes): un DEPÓSITO que sea (a) una transferencia entrante desde otra cuenta del mismo dueño/negocio (ej. "Online Transfer... FROM ****XXXX", "In-Branch Transfer... FROM CHECKING...") o (b) un desembolso de una línea de crédito/crédito rotativo (ej. "Credit Line ADV", "Credit Line Advance") NUNCA es ingreso real del negocio — no es un cliente pagando, es dinero propio moviéndose de cuenta o deuda entrando, y contarlo como revenue infla el ingreso real. NUNCA lo clasifiques en revenues, aunque en el extracto aparezca junto a los demás depósitos y parezca una transferencia bancaria común. Clasifícalo en PERSONAL con category "Personal bank transfer" (igual que su contraparte saliente), y en "detail_en"/"detail_es" aclara que es una transferencia entre cuentas propias o un avance de línea de crédito, no un pago de cliente. (Un depósito identificado como "Incoming Wire Transfer" de un tercero SÍ sigue siendo revenue normal con category "Wire transfer" — esta regla solo aplica a transferencias entre cuentas del mismo dueño y a avances de línea de crédito, no a wires de terceros.)
+
+REGLA DE DEVOLUCIONES Y REEMBOLSOS (importante, NUNCA la saltes): un DEPÓSITO/crédito que sea la devolución, reembolso o reverso de un gasto de negocio que ya se había hecho (ej. "DEBIT CARD RETURN", "REFUND", "CREDIT ADJUSTMENT", "REVERSAL", casi siempre ligado al nombre de un proveedor/comercio) es dinero que vuelve a entrar a la cuenta, no un gasto — NUNCA lo clasifiques como gasto (ni PERSONAL, ni OPEX, ni COGS, ni FEES), eso invertiría la dirección real del dinero y haría que el resultado neto se vea peor de lo que realmente es. Clasifícalo en REVENUES con category "Other income (specify)", y en "detail_en"/"detail_es" aclara que es una devolución/reembolso de un gasto anterior y no un pago de cliente nuevo (ej. detail_en="Refund from [proveedor], not new revenue" / detail_es="Reembolso de [proveedor], no es ingreso nuevo").
 
 Si algo no está claro, clasifícalo de todas formas en la categoría más probable (sin agregar una alerta individual por eso — las alertas se generan aparte, en el Paso 5, solo para patrones que de verdad importan).
 

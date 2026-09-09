@@ -19,7 +19,6 @@ export const CATEGORY_ES: Record<string, string> = {
   "Storage": "Almacenamiento",
   "Startup and moving costs": "Costos de inicio y mudanza",
   "Subcontractor costs": "Costos de subcontratistas",
-  "Fuel (work)": "Combustible (trabajo)",
   "Tolls (work)": "Peajes (trabajo)",
   "Permits": "Permisos",
   // OPEX
@@ -28,6 +27,7 @@ export const CATEGORY_ES: Record<string, string> = {
   "Utilities (electric/water)": "Servicios públicos (luz/agua)",
   "Internet": "Internet",
   "Business insurance": "Seguro del negocio",
+  "Fuel (work)": "Combustible (trabajo)",
   "Parking": "Parqueadero",
   "Car insurance": "Seguro del vehículo",
   "Car payment": "Pago del vehículo",
