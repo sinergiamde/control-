@@ -241,6 +241,15 @@ function renderOpexPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEngl
     bodyStyles: { fillColor: COLORS.totalOrange },
     margin: { left: 14, right: 14 },
   });
+  y = (doc as any).lastAutoTable.finalY + 4;
+
+  y = ensureSpace(doc, y, 260);
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(90, 90, 90);
+  const homeOfficeLines = doc.splitTextToSize(tr(STR.homeOfficeNote, isEnglish), pageWidth - 28);
+  doc.text(homeOfficeLines, 14, y);
+  doc.setFont("helvetica", "normal");
 }
 
 function renderThirdPartyPage(doc: jsPDF, pageWidth: number, data: ResultsData, isEnglish: boolean) {

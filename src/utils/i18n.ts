@@ -48,6 +48,8 @@ export const CATEGORY_ES: Record<string, string> = {
   "Travel expenses": "Gastos de viaje",
   "Hotels or lodging": "Hoteles o alojamiento",
   "Meals (work — fast food/coffee/snacks)": "Comidas (trabajo — comida rápida/café/snacks)",
+  "Credit card payment": "Pago a la tarjeta de crédito",
+  "Business loan": "Préstamo comercial",
   // Fees
   "Bank fees": "Comisiones bancarias",
   // Personal
@@ -124,6 +126,10 @@ export const STR = {
   totalCOGS: { en: "Total COGS", es: "Total COGS" },
   totalOpex: { en: "Total OpEx", es: "Total OpEx" },
   totalOpexWithFood: { en: "TOTAL OPEX (includes Food)", es: "TOTAL OPEX (incluye Alimentación)" },
+  homeOfficeNote: {
+    en: "Home Office Deduction: if this business operates from a home office, only the percentage of home-related costs (rent/mortgage interest, utilities, insurance, etc.) that corresponds to the space used regularly and exclusively for business may be deducted — not the full amount. Calculate that percentage (business square footage ÷ total home square footage) with your tax preparer before claiming it.",
+    es: "Deducción de Oficina en Casa: si este negocio opera desde una oficina en casa, solo se puede deducir el porcentaje de los gastos del hogar (renta/intereses de hipoteca, servicios públicos, seguro, etc.) que corresponde al espacio usado de forma regular y exclusiva para el negocio — no el monto completo. Calcula ese porcentaje (pies cuadrados del negocio ÷ pies cuadrados totales de la casa) con tu preparador de impuestos antes de reclamarlo.",
+  },
   totalFood: { en: "Total Food", es: "Total Alimentación" },
   totalPersonal: { en: "Total Personal", es: "Total Personal" },
   totalThirdParty: { en: "Total Third Party Payments", es: "Total Pagos a Terceros" },

@@ -197,6 +197,12 @@ function addOpexSheet(wb: ExcelJS.Workbook, data: ResultsData, isEnglish: boolea
   ws.getCell(r, 5).numFmt = "0.0%";
   styleRow(ws, r, COLORS.totalOpexBg, "000000", true, 11);
   ws.getRow(r).height = 24;
+  r += 2;
+
+  ws.mergeCells(r, 1, r, 5);
+  ws.getCell(r, 1).value = tr(STR.homeOfficeNote, isEnglish);
+  styleRow(ws, r, COLORS.altRow2, COLORS.detailFont, false, 8, 5);
+  ws.getRow(r).height = 42;
 }
 
 function addThirdPartySheet(wb: ExcelJS.Workbook, data: ResultsData, isEnglish: boolean) {

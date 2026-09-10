@@ -106,6 +106,7 @@ export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
     "Website and hosting", "Training and development", "Licenses and permits", "Legal and compliance fees",
     "Professional services", "Office supplies", "Office furniture and equipment", "Operating costs",
     "Bad debts or loans", "Travel expenses", "Hotels or lodging", "Meals (work — fast food/coffee/snacks)",
+    "Credit card payment", "Business loan",
   ],
   fees: ["Bank fees"],
   personal: [
