@@ -1,17 +1,28 @@
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, ShieldCheck, LayoutDashboard, History, Building2 } from "lucide-react";
+import { LogOut, ShieldCheck, Building2 } from "lucide-react";
 import { FlagIcon } from "@/components/FlagIcon";
 import { useNavigate, useLocation } from "react-router-dom";
 
-const Navbar = () => {
+interface NavbarProps {
+  /** When set, asks this before leaving the page (e.g. statements picked but not analyzed yet). */
+  confirmBeforeLeave?: string;
+}
+
+const Navbar = ({ confirmBeforeLeave }: NavbarProps = {}) => {
   const { lang, setLang, t } = useLanguage();
   const { user, profile, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
+  const go = (to: string) => {
+    if (confirmBeforeLeave && !window.confirm(confirmBeforeLeave)) return;
+    navigate(to);
+  };
+
   const handleLogout = async () => {
+    if (confirmBeforeLeave && !window.confirm(confirmBeforeLeave)) return;
     await logout();
     navigate("/");
   };
@@ -21,7 +32,7 @@ const Navbar = () => {
 
   return (
     <nav className="bg-background/80 backdrop-blur-md border-b border-border px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between sticky top-0 z-50">
-      <div className="flex items-center gap-2 cursor-pointer group" onClick={() => navigate(user ? "/dashboard" : "/")}>
+      <div className="flex items-center gap-2 cursor-pointer group" onClick={() => go(user ? "/dashboard" : "/")}>
         <span className="text-2xl font-black tracking-tight text-primary neon-text group-hover:scale-105 transition-transform duration-200">
           CTRL+
         </span>
@@ -70,13 +81,13 @@ const Navbar = () => {
             {isAdmin && (
               <Button
                 variant="ghost" size="sm"
-                onClick={() => navigate(isOnAdmin ? "/dashboard" : "/admin")}
+                onClick={() => go(isOnAdmin ? "/clients" : "/admin")}
                 className="text-primary hover:text-primary hover:bg-primary/10 hover:scale-105 transition-all duration-200"
               >
                 {isOnAdmin ? (
                   <>
-                    <LayoutDashboard className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">Dashboard</span>
+                    <Building2 className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">{t("clientsNav")}</span>
                   </>
                 ) : (
                   <>
@@ -89,20 +100,11 @@ const Navbar = () => {
 
             <Button
               variant="ghost" size="sm"
-              onClick={() => navigate("/clients")}
+              onClick={() => go("/clients")}
               className="text-muted-foreground hover:text-primary hover:bg-primary/10 hover:scale-105 transition-all duration-200"
             >
               <Building2 className="h-4 w-4 mr-1" />
               <span className="hidden sm:inline">{t("clientsNav")}</span>
-            </Button>
-
-            <Button
-              variant="ghost" size="sm"
-              onClick={() => navigate("/history")}
-              className="text-muted-foreground hover:text-primary hover:bg-primary/10 hover:scale-105 transition-all duration-200"
-            >
-              <History className="h-4 w-4 mr-1" />
-              <span className="hidden sm:inline">Historial</span>
             </Button>
 
             <Button

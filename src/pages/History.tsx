@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/integrations/supabase/client";
-import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -20,6 +19,7 @@ import { saveReportToStorage } from "@/utils/saveReport";
 import { normalizePeriod } from "@/utils/normalizePeriod";
 import { STR, tr, translateCategory, pickText } from "@/utils/i18n";
 import { ClientCombobox, type ClientOption } from "@/components/ClientCombobox";
+import { fetchClientNodes, clientPathLabel, clientWithSubIds, type ClientNode } from "@/utils/clientTree";
 
 interface AnalysisRow {
   id: string;
@@ -36,6 +36,7 @@ interface AnalysisRow {
   created_at: string;
   full_analysis: any;
   client_id: string | null;
+  user_id: string;
   clients: { name: string } | null;
 }
 
@@ -115,7 +116,7 @@ const getStatementYear = (row: AnalysisRow) => {
 type RangeOption = "all" | "last3" | "last6" | string;
 
 const History = () => {
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session, isAdmin, loading: authLoading } = useAuth();
   const { lang } = useLanguage();
   const isEnglish = lang === "en";
   const navigate = useNavigate();
@@ -133,6 +134,12 @@ const History = () => {
   const [clientFilter, setClientFilter] = useState<ClientOption | null>(
     incomingClientId && incomingClientName ? { id: incomingClientId, name: incomingClientName } : null
   );
+  // Arriving from a user's "History" button (Admin / Clients page) pre-selects that user, so
+  // "Diana's history" shows only what Diana uploaded instead of the whole app's.
+  const incomingUserId = (location.state as any)?.userId as string | undefined;
+  const [userFilter, setUserFilter] = useState<string>(incomingUserId || "all");
+  const [userNames, setUserNames] = useState<Map<string, string>>(new Map());
+  const [clientNodes, setClientNodes] = useState<ClientNode[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [annualSummary, setAnnualSummary] = useState<{ generated_at: string; net_income: number } | null>(null);
@@ -143,14 +150,16 @@ const History = () => {
 
   const fetchRows = async () => {
     if (!user) return;
-    // Shared history: every logged-in user sees every statement (see RLS on `analyses`), not just
-    // the ones they personally uploaded — that's what keeps Cristian and Juan Fernando looking at
-    // the same client history instead of two different lists.
-    const { data } = await supabase
-      .from("analyses")
-      .select("*, clients(name)")
-      .order("created_at", { ascending: false });
+    // RLS decides what comes back: a regular user gets only the statements they uploaded
+    // themselves; an admin (TaxForYou) gets everyone's and narrows it with the user/company filters.
+    const [{ data }, nodes, { data: profiles }] = await Promise.all([
+      supabase.from("analyses").select("*, clients(name)").order("created_at", { ascending: false }),
+      fetchClientNodes(),
+      isAdmin ? supabase.from("profiles").select("user_id, name") : Promise.resolve({ data: [] as { user_id: string; name: string }[] }),
+    ]);
     setRows((data as AnalysisRow[]) || []);
+    setClientNodes(nodes);
+    setUserNames(new Map((profiles || []).map((p) => [p.user_id, p.name || "—"])));
     setLoading(false);
   };
 
@@ -159,7 +168,18 @@ const History = () => {
     if (!user) { navigate("/"); return; }
     fetchRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, navigate, isAdmin]);
+
+  // Filtering by a customer company ("Pepito Pérez") includes every sub-company it manages.
+  const clientFilterIds = useMemo(
+    () => (clientFilter ? clientWithSubIds(clientFilter.id, clientNodes) : null),
+    [clientFilter, clientNodes]
+  );
+
+  const clientLabelFor = (row: AnalysisRow) => {
+    const node = clientNodes.find((n) => n.id === row.client_id);
+    return node ? clientPathLabel(node, clientNodes) : row.clients?.name || tr(STR.noClientLabel, isEnglish);
+  };
 
   const previousYear = (new Date().getFullYear() - 1).toString();
 
@@ -215,7 +235,8 @@ const History = () => {
       .select("id, type, period_label, file_name, storage_path, created_at")
       .order("created_at", { ascending: false })
       .limit(30);
-    if (clientFilter) query = query.eq("client_id", clientFilter.id);
+    if (clientFilterIds) query = query.in("client_id", Array.from(clientFilterIds));
+    if (userFilter !== "all") query = query.eq("created_by", userFilter);
     const { data } = await query;
     setSavedReports((data as ReportRow[]) || []);
     setLoadingReports(false);
@@ -224,7 +245,7 @@ const History = () => {
   useEffect(() => {
     fetchSavedReports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, clientFilter]);
+  }, [user, clientFilterIds, userFilter]);
 
   const handleOpenSavedReport = async (report: ReportRow) => {
     setOpeningReportId(report.id);
@@ -270,7 +291,8 @@ const History = () => {
 
   const filtered = useMemo(() => {
     let result = rows;
-    if (clientFilter) result = result.filter((r) => r.client_id === clientFilter.id);
+    if (clientFilterIds) result = result.filter((r) => !!r.client_id && clientFilterIds.has(r.client_id));
+    if (userFilter !== "all") result = result.filter((r) => r.user_id === userFilter);
 
     if (range === "all") return result;
     if (range === "last3" || range === "last6") {
@@ -291,7 +313,7 @@ const History = () => {
       });
     }
     return result.filter((r) => getStatementYear(r) === range);
-  }, [rows, range, clientFilter, customRange]);
+  }, [rows, range, clientFilterIds, userFilter, customRange]);
 
   const duplicatePeriodIds = useMemo(() => {
     // Keyed by client + period, never period alone — history is now shared across every client,
@@ -394,7 +416,6 @@ const History = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar />
       <main className="flex-1 container mx-auto px-4 py-8 max-w-6xl space-y-6">
         <Card className="neon-border">
           <CardHeader className="pb-3">
@@ -405,7 +426,10 @@ const History = () => {
             <p className="text-xs text-muted-foreground">{tr(STR.downloadReportDesc, isEnglish)}</p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {!isAdmin && (
+              <p className="text-xs text-muted-foreground">{tr(STR.myHistoryNote, isEnglish)}</p>
+            )}
+            <div className={`grid grid-cols-1 gap-4 ${isAdmin ? "sm:grid-cols-2 lg:grid-cols-3" : "sm:grid-cols-2"}`}>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">{tr(STR.clientLabel, isEnglish)}</label>
                 <ClientCombobox
@@ -417,9 +441,29 @@ const History = () => {
                   createLabel={(q) => `${tr(STR.clientCreatePrefix, isEnglish)} "${q}"`}
                   allowClear
                   clearLabel={tr(STR.clientFilterAllLabel, isEnglish)}
+                  allowCreate={false}
                   className="w-full"
                 />
               </div>
+
+              {isAdmin && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">{tr(STR.userFilterLabel, isEnglish)}</label>
+                  <Select value={userFilter} onValueChange={setUserFilter}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={tr(STR.userFilterAllLabel, isEnglish)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{tr(STR.userFilterAllLabel, isEnglish)}</SelectItem>
+                      {Array.from(userNames.entries())
+                        .sort((a, b) => a[1].localeCompare(b[1]))
+                        .map(([id, name]) => (
+                          <SelectItem key={id} value={id}>{name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">{tr(STR.whichMonthLabel, isEnglish)}</label>
@@ -633,6 +677,7 @@ const History = () => {
                     <TableRow>
                       <TableHead>{tr(STR.date, isEnglish)}</TableHead>
                       <TableHead>{tr(STR.clientColumnLabel, isEnglish)}</TableHead>
+                      {isAdmin && <TableHead>{tr(STR.uploadedByColumn, isEnglish)}</TableHead>}
                       <TableHead>{tr(STR.fileWord, isEnglish)}</TableHead>
                       <TableHead>{tr(STR.periodWord, isEnglish)}</TableHead>
                       <TableHead className="text-right">{tr(STR.income, isEnglish)}</TableHead>
@@ -649,9 +694,14 @@ const History = () => {
                             year: "numeric", month: "short", day: "numeric",
                           })}
                         </TableCell>
-                        <TableCell className="text-muted-foreground max-w-[140px] truncate">
-                          {row.clients?.name || tr(STR.noClientLabel, isEnglish)}
+                        <TableCell className="text-muted-foreground max-w-[200px] truncate" title={clientLabelFor(row)}>
+                          {clientLabelFor(row)}
                         </TableCell>
+                        {isAdmin && (
+                          <TableCell className="text-muted-foreground max-w-[140px] truncate">
+                            {userNames.get(row.user_id) || "—"}
+                          </TableCell>
+                        )}
                         <TableCell className="font-medium max-w-[200px] truncate">
                           {row.original_filename || row.company || "—"}
                         </TableCell>

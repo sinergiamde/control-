@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Check, ChevronsUpDown, Loader2, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, CornerDownRight, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { fetchClientNodes, sortAsTree, clientPathLabel, type ClientNode } from "@/utils/clientTree";
 
 export interface ClientOption {
   id: string;
@@ -23,12 +24,16 @@ interface ClientComboboxProps {
   /** Show a "clear selection" row (used for the History filter, not the Dashboard picker). */
   allowClear?: boolean;
   clearLabel?: string;
+  /** Offer the "create new" row at all (off for filters — creating a company from a filter is odd). */
+  allowCreate?: boolean;
+  /** Where a newly typed company gets created: under this parent company, or top-level when null. */
+  createParentId?: string | null;
   className?: string;
 }
 
-/** Type-to-search client picker, shared between Dashboard (assign a statement to a client) and
- * History (filter by client) — clients are a firm-wide shared list (see `clients` table), so
- * whatever gets created here is immediately visible to every logged-in user, not just this one. */
+/** Type-to-search company picker, shared between Dashboard (assign a statement to a company) and
+ * History (filter by company). Shows the hierarchy — each customer company followed by the
+ * sub-companies it manages — scoped by RLS to what the logged-in user may see. */
 export const ClientCombobox = ({
   value,
   onChange,
@@ -38,17 +43,18 @@ export const ClientCombobox = ({
   createLabel,
   allowClear = false,
   clearLabel = "",
+  allowCreate = true,
+  createParentId = null,
   className,
 }: ClientComboboxProps) => {
   const [open, setOpen] = useState(false);
-  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [clients, setClients] = useState<ClientNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
 
   const loadClients = async () => {
-    const { data } = await supabase.from("clients").select("id, name").order("name", { ascending: true });
-    setClients((data as ClientOption[]) || []);
+    setClients(sortAsTree(await fetchClientNodes()));
     setLoading(false);
   };
 
@@ -58,13 +64,17 @@ export const ClientCombobox = ({
 
   const selected = clients.find((c) => c.id === value) || null;
   const trimmedQuery = query.trim();
+  // Searching "Pepito" also lists every sub-company under Pepito Pérez, not just the parent row.
   const filteredClients = trimmedQuery
-    ? clients.filter((c) => c.name.toLowerCase().includes(trimmedQuery.toLowerCase()))
+    ? clients.filter((c) => clientPathLabel(c, clients).toLowerCase().includes(trimmedQuery.toLowerCase()))
     : clients;
-  const exactMatch = clients.find((c) => c.name.toLowerCase() === trimmedQuery.toLowerCase());
+  // Names are unique per parent, so "already exists" only means a sibling with the same name.
+  const exactMatch = clients.find(
+    (c) => (c.parent_id ?? null) === createParentId && c.name.toLowerCase() === trimmedQuery.toLowerCase()
+  );
 
-  const select = (client: ClientOption | null) => {
-    onChange(client);
+  const select = (client: ClientNode | null) => {
+    onChange(client ? { id: client.id, name: client.name } : null);
     setOpen(false);
     setQuery("");
   };
@@ -74,23 +84,28 @@ export const ClientCombobox = ({
     if (exactMatch) { select(exactMatch); return; }
 
     setCreating(true);
-    const { data, error } = await supabase.from("clients").insert({ name: trimmedQuery }).select("id, name").single();
+    const { data, error } = await supabase
+      .from("clients")
+      .insert({ name: trimmedQuery, parent_id: createParentId })
+      .select("id, name, parent_id")
+      .single();
     setCreating(false);
 
     if (error) {
       // Someone else may have created the same name a moment ago (case-insensitive unique index) —
       // recover by re-checking instead of showing an error for what is really a duplicate-safe retry.
-      const { data: fresh } = await supabase.from("clients").select("id, name").order("name", { ascending: true });
-      const list = (fresh as ClientOption[]) || [];
+      const list = sortAsTree(await fetchClientNodes());
       setClients(list);
-      const match = list.find((c) => c.name.toLowerCase() === trimmedQuery.toLowerCase());
+      const match = list.find(
+        (c) => (c.parent_id ?? null) === createParentId && c.name.toLowerCase() === trimmedQuery.toLowerCase()
+      );
       if (match) select(match);
       return;
     }
 
     if (data) {
-      const created = data as ClientOption;
-      setClients((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      const created = data as ClientNode;
+      setClients((prev) => sortAsTree([...prev, created]));
       select(created);
     }
   };
@@ -105,7 +120,7 @@ export const ClientCombobox = ({
           aria-expanded={open}
           className={cn("justify-between font-normal", className)}
         >
-          <span className="truncate">{selected ? selected.name : placeholder}</span>
+          <span className="truncate">{selected ? clientPathLabel(selected, clients) : placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -127,13 +142,17 @@ export const ClientCombobox = ({
                       {clearLabel}
                     </CommandItem>
                   )}
-                  {filteredClients.map((c) => (
-                    <CommandItem key={c.id} onSelect={() => select(c)}>
-                      <Check className={cn("mr-2 h-4 w-4", value === c.id ? "opacity-100" : "opacity-0")} />
-                      {c.name}
-                    </CommandItem>
-                  ))}
-                  {trimmedQuery && !exactMatch && (
+                  {filteredClients.map((c) => {
+                    const isSub = !!c.parent_id && clients.some((p) => p.id === c.parent_id);
+                    return (
+                      <CommandItem key={c.id} onSelect={() => select(c)} className={isSub ? "pl-6" : "font-medium"}>
+                        <Check className={cn("mr-2 h-4 w-4 shrink-0", value === c.id ? "opacity-100" : "opacity-0")} />
+                        {isSub && <CornerDownRight className="mr-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                        <span className="truncate">{c.name}</span>
+                      </CommandItem>
+                    );
+                  })}
+                  {allowCreate && trimmedQuery && !exactMatch && (
                     <CommandItem onSelect={handleCreate} disabled={creating} className="text-primary">
                       {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
                       {createLabel(trimmedQuery)}

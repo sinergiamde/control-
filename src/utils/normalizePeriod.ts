@@ -2,6 +2,10 @@
 export const normalizePeriod = (period: string): string => {
   if (!period) return "";
   const s = String(period).toLowerCase().trim();
+  // Full US dates first ("04/01/2025 - 04/30/2025", how the analyzer writes bank periods) — the
+  // looser month/year patterns below would otherwise read the "01/2025" in "04/01/2025" as JANUARY.
+  const us = s.match(/(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/(20\d{2})/);
+  if (us) return `${us[3]}-${us[1].padStart(2, "0")}`;
   const ym = s.match(/(20\d{2})[-/\s.](0?[1-9]|1[0-2])/);
   if (ym) return `${ym[1]}-${ym[2].padStart(2, "0")}`;
   const my = s.match(/(0?[1-9]|1[0-2])[-/\s.](20\d{2})/);

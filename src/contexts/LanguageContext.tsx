@@ -47,6 +47,10 @@ const translations = {
     allUsers: "All Users",
     noUsers: "No users found",
     userDeleted: "User deleted successfully",
+    makeAdmin: "Make admin",
+    removeAdmin: "Remove admin",
+    adminGranted: "Admin access granted",
+    adminRevoked: "Admin access removed",
     actions: "Actions",
     joined: "Joined",
     selectMultiple: "(you can select multiple)",
@@ -66,24 +70,38 @@ const translations = {
     couldNotReadFile: "Could not read the file.",
     analyzerCouldNotRead: "The analyzer could not read this file.",
     analyzerNoResults: "The analyzer did not return any results.",
-    clientsNav: "Clients",
-    clientsPageTitle: "Clients",
-    clientsPageDesc: "Shared across everyone who logs in — add, rename, and remove clients here.",
-    addClient: "Add client",
-    clientNamePlaceholder: "Client name (e.g. TAXFOURYOU INC)",
-    noClientsYet: "No clients yet. Add the first one above.",
+    clientsNav: "Companies",
+    clientsPageTitle: "Companies",
+    clientsPageDesc: "TaxForYou's customer companies and the companies each one manages.",
+    addClient: "Add company",
+    clientNamePlaceholder: "New customer company (e.g. Pepito Pérez)",
+    noClientsYet: "No companies yet. Add the first one above.",
+    subCompanyPlaceholder: "New sub-company of",
+    addSubCompany: "Add",
+    subCompaniesWord: "sub-companies",
+    usersWord: "users",
+    moveToLabel: "Move to…",
+    topLevelOption: "Customer company (top level)",
+    companyMoved: "Company moved.",
+    noSubCompanies: "No sub-companies yet.",
+    ownerCaption: "Owner of the app",
+    customerCompaniesWord: "customer companies",
+    companyUsersLabel: "Users",
+    userCompanyColumn: "Company",
+    noCompanyOption: "No company",
+    userCompanyUpdated: "User's company updated.",
     statementsCountLabel: "statements",
     editWord: "Edit",
     saveWord: "Save",
     cancelWord: "Cancel",
-    clientCreated: "Client added.",
-    clientRenamed: "Client renamed.",
-    clientDeleted: "Client deleted.",
-    clientDuplicateError: "A client with that name already exists.",
-    clientDeleteBlockedError: "This client has statements linked to it — remove or reassign those first.",
-    confirmDeleteClient: "Delete this client? This cannot be undone.",
-    clientNameEmptyError: "Enter a client name.",
-    searchClientsPlaceholder: "Search clients...",
+    clientCreated: "Company added.",
+    clientRenamed: "Company renamed.",
+    clientDeleted: "Company deleted.",
+    clientDuplicateError: "A company with that name already exists here.",
+    clientDeleteBlockedError: "This company has statements, sub-companies or users linked to it — remove or move those first.",
+    confirmDeleteClient: "Delete this company? This cannot be undone.",
+    clientNameEmptyError: "Enter a company name.",
+    searchClientsPlaceholder: "Search companies...",
     viewHistoryWord: "History",
   },
   es: {
@@ -130,6 +148,10 @@ const translations = {
     allUsers: "Todos los Usuarios",
     noUsers: "No se encontraron usuarios",
     userDeleted: "Usuario eliminado exitosamente",
+    makeAdmin: "Hacer admin",
+    removeAdmin: "Quitar admin",
+    adminGranted: "Acceso de admin otorgado",
+    adminRevoked: "Acceso de admin retirado",
     actions: "Acciones",
     joined: "Registrado",
     selectMultiple: "(puedes seleccionar varios)",
@@ -149,24 +171,38 @@ const translations = {
     couldNotReadFile: "No se pudo leer el archivo.",
     analyzerCouldNotRead: "El analizador no pudo leer este archivo.",
     analyzerNoResults: "El analizador no devolvió resultados.",
-    clientsNav: "Clientes",
-    clientsPageTitle: "Clientes",
-    clientsPageDesc: "Compartido entre todos los que inician sesión — agrega, renombra y elimina clientes aquí.",
-    addClient: "Agregar cliente",
-    clientNamePlaceholder: "Nombre del cliente (ej. TAXFOURYOU INC)",
-    noClientsYet: "Aún no hay clientes. Agrega el primero arriba.",
+    clientsNav: "Empresas",
+    clientsPageTitle: "Empresas",
+    clientsPageDesc: "Las empresas cliente de TaxForYou y las empresas que maneja cada una.",
+    addClient: "Agregar empresa",
+    clientNamePlaceholder: "Nueva empresa cliente (ej. Pepito Pérez)",
+    noClientsYet: "Aún no hay empresas. Agrega la primera arriba.",
+    subCompanyPlaceholder: "Nueva sub-empresa de",
+    addSubCompany: "Agregar",
+    subCompaniesWord: "sub-empresas",
+    usersWord: "usuarios",
+    moveToLabel: "Mover a…",
+    topLevelOption: "Empresa cliente (nivel superior)",
+    companyMoved: "Empresa movida.",
+    noSubCompanies: "Aún no tiene sub-empresas.",
+    ownerCaption: "Dueña de la aplicación",
+    customerCompaniesWord: "empresas cliente",
+    companyUsersLabel: "Usuarios",
+    userCompanyColumn: "Empresa",
+    noCompanyOption: "Sin empresa",
+    userCompanyUpdated: "Empresa del usuario actualizada.",
     statementsCountLabel: "extractos",
     editWord: "Editar",
     saveWord: "Guardar",
     cancelWord: "Cancelar",
-    clientCreated: "Cliente agregado.",
-    clientRenamed: "Cliente renombrado.",
-    clientDeleted: "Cliente eliminado.",
-    clientDuplicateError: "Ya existe un cliente con ese nombre.",
-    clientDeleteBlockedError: "Este cliente tiene extractos asociados — elimínalos o reasígnalos primero.",
-    confirmDeleteClient: "¿Eliminar este cliente? Esto no se puede deshacer.",
-    clientNameEmptyError: "Escribe un nombre de cliente.",
-    searchClientsPlaceholder: "Buscar clientes...",
+    clientCreated: "Empresa agregada.",
+    clientRenamed: "Empresa renombrada.",
+    clientDeleted: "Empresa eliminada.",
+    clientDuplicateError: "Ya existe una empresa con ese nombre aquí.",
+    clientDeleteBlockedError: "Esta empresa tiene extractos, sub-empresas o usuarios asociados — elimínalos o muévelos primero.",
+    confirmDeleteClient: "¿Eliminar esta empresa? Esto no se puede deshacer.",
+    clientNameEmptyError: "Escribe un nombre de empresa.",
+    searchClientsPlaceholder: "Buscar empresas...",
     viewHistoryWord: "Historial",
   },
 };
@@ -179,8 +215,29 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+const LANG_STORAGE_KEY = "ctrl-plus-lang";
+
+// The chosen language survives a reload (per browser). Storage can be unavailable (private mode,
+// blocked site data), so every access is guarded and English stays the fallback.
+const readStoredLang = (): Lang => {
+  try {
+    const stored = window.localStorage.getItem(LANG_STORAGE_KEY);
+    return stored === "es" || stored === "en" ? stored : "en";
+  } catch {
+    return "en";
+  }
+};
+
 export const LanguageProvider = ({ children }: { children: ReactNode }) => {
-  const [lang, setLang] = useState<Lang>("en");
+  const [lang, setLangState] = useState<Lang>(readStoredLang);
+  const setLang = (next: Lang) => {
+    setLangState(next);
+    try {
+      window.localStorage.setItem(LANG_STORAGE_KEY, next);
+    } catch {
+      // Not persisted this time; the in-memory choice still applies.
+    }
+  };
   const t = (key: keyof typeof translations.en) => translations[lang][key] || key;
   return (
     <LanguageContext.Provider value={{ lang, setLang, t }}>

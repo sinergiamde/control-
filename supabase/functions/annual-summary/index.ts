@@ -185,6 +185,15 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    // The service-role read below bypasses RLS, so check here that this user may see this company
+    // (admins: any; company users: only their own company and its sub-companies).
+    const { data: allowed, error: accessError } = await supabaseAuth.rpc("can_access_client", { _client_id: clientId });
+    if (accessError || !allowed) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const { data: rows, error } = await supabase

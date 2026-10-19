@@ -16,7 +16,15 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: C
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
         caption: "flex justify-center pt-1 relative items-center",
-        caption_label: "text-sm font-medium",
+        caption_label: "text-sm font-medium flex items-center gap-1",
+        // captionLayout="dropdown(-buttons)": native <select> laid invisibly over its label, so
+        // clicking "April" / "2025" opens a month/year list instead of paging one month at a time.
+        caption_dropdowns: "flex justify-center gap-2",
+        dropdown_month: "relative inline-flex items-center rounded-md border border-border px-2 py-1 hover:bg-muted",
+        dropdown_year: "relative inline-flex items-center rounded-md border border-border px-2 py-1 hover:bg-muted",
+        dropdown: "absolute inset-0 w-full cursor-pointer opacity-0 bg-popover text-popover-foreground",
+        dropdown_icon: "h-3 w-3 opacity-60",
+        vhidden: "sr-only",
         nav: "space-x-1 flex items-center",
         nav_button: cn(
           buttonVariants({ variant: "outline" }),

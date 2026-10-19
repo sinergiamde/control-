@@ -15,7 +15,6 @@ import {
   Building2, UtensilsCrossed, Car, ShoppingBag, Zap, Target, FileSpreadsheet, FileText,
   CheckCircle2, Users, Pencil, Loader2,
 } from "lucide-react";
-import Navbar from "@/components/Navbar";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
 import { saveReportToStorage } from "@/utils/saveReport";
@@ -583,7 +582,6 @@ const Results = () => {
   if (!rawResults) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <Navbar />
         <div className="flex-1 flex items-center justify-center p-8">
           <Card className="neon-border bg-card max-w-md w-full">
             <CardContent className="p-8 text-center">
@@ -592,7 +590,7 @@ const Results = () => {
               <p className="text-muted-foreground text-sm mb-6">
                 {tr(STR.noDataDesc, isEnglish)}
               </p>
-              <Button onClick={() => navigate("/dashboard")} className="neon-glow">
+              <Button onClick={() => navigate(clientId ? `/clients/${clientId}` : "/clients")} className="neon-glow">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 {t("backToDashboard")}
               </Button>
@@ -698,7 +696,6 @@ const Results = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar />
       <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 opacity-0 animate-fade-in">
           <div>
@@ -713,7 +710,7 @@ const Results = () => {
             )}
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" onClick={() => navigate("/dashboard")}
+            <Button variant="outline" onClick={() => navigate(clientId ? `/clients/${clientId}` : "/clients")}
               className="border-border text-foreground hover:bg-muted hover:text-primary transition-all duration-300">
               <ArrowLeft className="h-4 w-4 mr-1" />
               {t("backToDashboard")}

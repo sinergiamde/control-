@@ -136,6 +136,7 @@ export type Database = {
           created_by: string | null
           id: string
           name: string
+          parent_id: string | null
           updated_at: string
         }
         Insert: {
@@ -143,6 +144,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           name: string
+          parent_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -150,9 +152,18 @@ export type Database = {
           created_by?: string | null
           id?: string
           name?: string
+          parent_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "clients_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reports: {
         Row: {
@@ -207,6 +218,8 @@ export type Database = {
       }
       profiles: {
         Row: {
+          avatar_url: string | null
+          client_id: string | null
           country: string | null
           created_at: string
           id: string
@@ -216,6 +229,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          avatar_url?: string | null
+          client_id?: string | null
           country?: string | null
           created_at?: string
           id?: string
@@ -225,6 +240,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          avatar_url?: string | null
+          client_id?: string | null
           country?: string | null
           created_at?: string
           id?: string
@@ -233,7 +250,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -258,6 +283,35 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_delete_user: {
+        Args: { _user_id: string }
+        Returns: undefined
+      }
+      admin_delete_client: {
+        Args: { _client_id: string }
+        Returns: Json
+      }
+      admin_list_users: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          user_id: string
+          email: string
+          last_sign_in_at: string | null
+          created_at: string
+        }[]
+      }
+      admin_set_user_password: {
+        Args: { _user_id: string; _new_password: string }
+        Returns: undefined
+      }
+      can_access_client: {
+        Args: { _client_id: string }
+        Returns: boolean
+      }
+      my_client_id: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

@@ -6,6 +6,9 @@ interface Profile {
   name: string;
   phone: string;
   country: string;
+  /** The customer company (top-level `clients` row) this login belongs to; null until an admin assigns one. */
+  client_id: string | null;
+  avatar_url: string | null;
 }
 
 interface AuthContextType {
@@ -17,6 +20,8 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ error: string | null }>;
   register: (email: string, password: string, meta: { name: string; phone: string; country: string }) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
+  /** Re-reads the profile after the user edits it (name, photo) so the sidebar updates at once. */
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,12 +34,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
-      .select("name, phone, country")
+      .select("name, phone, country, client_id, avatar_url")
       .eq("user_id", userId)
       .single();
-    if (data) setProfile(data);
+    if (data) {
+      setProfile(data);
+      return;
+    }
+    // A database that doesn't have the avatar column yet must not cost the user their whole profile.
+    if (error) {
+      const { data: basic } = await supabase
+        .from("profiles")
+        .select("name, phone, country, client_id")
+        .eq("user_id", userId)
+        .single();
+      if (basic) setProfile({ ...basic, avatar_url: null });
+    }
   };
 
   const checkAdmin = async (userId: string) => {
@@ -93,6 +110,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { error: error?.message ?? null };
   };
 
+  const refreshProfile = async () => {
+    if (user) await fetchProfile(user.id);
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -102,7 +123,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, isAdmin, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, session, profile, isAdmin, loading, login, register, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
