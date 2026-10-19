@@ -1,7 +1,8 @@
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, ShieldCheck, Building2 } from "lucide-react";
+import { LogOut, ShieldCheck, Building2, Moon, Sun } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import { FlagIcon } from "@/components/FlagIcon";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -13,6 +14,7 @@ interface NavbarProps {
 const Navbar = ({ confirmBeforeLeave }: NavbarProps = {}) => {
   const { lang, setLang, t } = useLanguage();
   const { user, profile, isAdmin, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -42,6 +44,14 @@ const Navbar = ({ confirmBeforeLeave }: NavbarProps = {}) => {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <button
+          type="button"
+          onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+          title={theme === "light" ? "Dark / Oscuro" : "Light / Claro"}
+          className="h-8 w-8 flex items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+        </button>
         {/* Two always-visible flag buttons (current language highlighted) instead of a single
             "switch to X" toggle — a toggle that shows the target language's label reads, to a
             non-technical eye, like it's naming the language you're currently in. */}

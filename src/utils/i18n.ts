@@ -353,6 +353,10 @@ export const STR = {
     en: "Your user isn't assigned to a company yet. Ask the TaxForYou administrator to assign you one.",
     es: "Tu usuario aún no está asignado a una empresa. Pide al administrador de TaxForYou que te asigne una.",
   },
+  themeSection: { en: "Theme", es: "Tema" },
+  themeLight: { en: "Light", es: "Claro" },
+  themeDark: { en: "Dark", es: "Oscuro" },
+  themeHint: { en: "Saved on this device — it stays after you reload.", es: "Se guarda en este dispositivo — se mantiene aunque recargues." },
   // Settings (every user) + company picker dashboard
   settingsNav: { en: "Settings", es: "Configuración" },
   myAccountSection: { en: "My account", es: "Mi cuenta" },

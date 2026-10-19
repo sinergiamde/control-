@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Eye, EyeOff, Globe, KeyRound, Loader2, Mail, Save, Settings as SettingsIcon, Trash2, User as UserIcon } from "lucide-react";
+import { Camera, Eye, EyeOff, Globe, KeyRound, Loader2, Mail, Moon, Palette, Save, Settings as SettingsIcon, Sun, Trash2, User as UserIcon } from "lucide-react";
 import UserAvatar from "@/components/UserAvatar";
 import { FlagIcon } from "@/components/FlagIcon";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { STR, tr } from "@/utils/i18n";
@@ -41,6 +42,7 @@ const Settings = () => {
   const { lang, setLang } = useLanguage();
   const isEnglish = lang === "en";
   const { user, profile, refreshProfile } = useAuth();
+  const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -273,6 +275,37 @@ const Settings = () => {
             {langButton("en", "English", "us")}
           </div>
           <p className="text-xs text-muted-foreground mt-2">{tr(STR.languageHint, isEnglish)}</p>
+        </CardContent>
+      </Card>
+
+      {/* Theme */}
+      <Card className="neon-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Palette className="h-4 w-4 text-primary" />
+            {tr(STR.themeSection, isEnglish)}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-3">
+            {([
+              { value: "light", icon: Sun, label: tr(STR.themeLight, isEnglish) },
+              { value: "dark", icon: Moon, label: tr(STR.themeDark, isEnglish) },
+            ] as const).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setTheme(opt.value)}
+                aria-pressed={theme === opt.value}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
+                  theme === opt.value ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+              >
+                <opt.icon className="h-4 w-4" /> {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">{tr(STR.themeHint, isEnglish)}</p>
         </CardContent>
       </Card>
 

@@ -687,9 +687,9 @@ const Results = () => {
   };
 
   const summaryCards = [
-    { label: tr(STR.totalIncome, isEnglish), value: results.totalRevenue, icon: DollarSign, color: "hsl(96, 100%, 50%)", sub: "100%" },
+    { label: tr(STR.totalIncome, isEnglish), value: results.totalRevenue, icon: DollarSign, color: "hsl(var(--primary))", sub: "100%" },
     { label: "COGS", value: results.totalCOGS, icon: Building2, color: "hsl(38, 90%, 55%)", sub: `${((results.totalCOGS / results.totalRevenue) * 100).toFixed(1)}%` },
-    { label: tr(STR.grossProfitShort, isEnglish), value: results.grossProfit, icon: TrendingUp, color: "hsl(96, 100%, 50%)", sub: `${((results.grossProfit / results.totalRevenue) * 100).toFixed(1)}%` },
+    { label: tr(STR.grossProfitShort, isEnglish), value: results.grossProfit, icon: TrendingUp, color: "hsl(var(--primary))", sub: `${((results.grossProfit / results.totalRevenue) * 100).toFixed(1)}%` },
     { label: "EBITDA", value: results.ebitda, icon: BarChart3, color: "hsl(210, 60%, 50%)", sub: `${((results.ebitda / results.totalRevenue) * 100).toFixed(1)}%` },
     { label: tr(STR.netIncomeShort, isEnglish), value: results.netIncome, icon: Wallet, color: "hsl(142, 76%, 36%)", sub: `${((results.netIncome / results.totalRevenue) * 100).toFixed(1)}%` },
   ];

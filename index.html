@@ -6,6 +6,14 @@
     <title>CTRL+ by TaxForYou</title>
     <meta name="description" content="Sube tu estado de cuenta y obtén tu reporte P&L en minutos." />
     <meta name="author" content="TaxForYou" />
+    <script>
+      // Apply the saved light/dark theme before first paint (see src/contexts/ThemeContext.tsx).
+      try {
+        document.documentElement.classList.add(localStorage.getItem("ctrl-plus-theme") === "light" ? "light" : "dark");
+      } catch (e) {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
   </head>
 
   <body>

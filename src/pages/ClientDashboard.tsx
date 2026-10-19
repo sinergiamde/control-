@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchClientNodes, type ClientNode } from "@/utils/clientTree";
@@ -53,6 +54,10 @@ const ClientDashboard = () => {
   const { user, isAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { theme } = useTheme();
+  const gridColor = theme === "light" ? "hsl(0 0% 88%)" : "hsl(0 0% 18%)";
+  const axisColor = theme === "light" ? "hsl(0 0% 40%)" : "hsl(0 0% 60%)";
+  const barGreen = theme === "light" ? "hsl(100, 70%, 40%)" : CHART_GREEN;
 
   const [nodes, setNodes] = useState<ClientNode[]>([]);
   const [rows, setRows] = useState<StatementRow[]>([]);
@@ -375,12 +380,12 @@ const ClientDashboard = () => {
                 <CardContent className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 18%)" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fill: "hsl(0 0% 60%)", fontSize: 11 }} axisLine={{ stroke: "hsl(0 0% 18%)" }} tickLine={false} />
-                      <YAxis tick={{ fill: "hsl(0 0% 60%)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtShort(v)} width={64} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: axisColor, fontSize: 11 }} axisLine={{ stroke: gridColor }} tickLine={false} />
+                      <YAxis tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtShort(v)} width={64} />
                       <Tooltip contentStyle={chartTooltipStyle} formatter={(v: number) => fmt(v)} cursor={{ fill: "hsl(0 0% 100% / 0.04)" }} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="income" name={tr(STR.income, isEnglish)} fill={CHART_GREEN} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="income" name={tr(STR.income, isEnglish)} fill={barGreen} radius={[4, 4, 0, 0]} />
                       <Bar dataKey="expenses" name={tr(STR.expenses, isEnglish)} fill={CHART_RED} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>

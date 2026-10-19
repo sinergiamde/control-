@@ -1,10 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Building2, ChevronRight, CornerDownRight, KeyRound, LayoutDashboard, LogOut, Menu, Settings as SettingsIcon, ShieldCheck, X,
+  Building2, ChevronRight, CornerDownRight, KeyRound, LayoutDashboard, LogOut, Menu, Moon, Settings as SettingsIcon, ShieldCheck, Sun, X,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { FlagIcon } from "@/components/FlagIcon";
 import UserAvatar from "@/components/UserAvatar";
 import { fetchClientNodes, type ClientNode } from "@/utils/clientTree";
@@ -39,6 +40,7 @@ const AppLayout = () => {
   const { lang, setLang, t } = useLanguage();
   const isEnglish = lang === "en";
   const { user, profile, isAdmin, logout, loading } = useAuth();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const [nodes, setNodes] = useState<ClientNode[]>([]);
@@ -227,6 +229,23 @@ const AppLayout = () => {
           >
             <FlagIcon country="es" className="w-3.5 h-2.5 rounded-[1px] shrink-0" /> ES
           </button>
+        </div>
+
+        <div className="flex items-center rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-0.5 w-full" role="group" aria-label={tr(STR.themeSection, isEnglish)}>
+          {([
+            { value: "light", icon: Sun, label: tr(STR.themeLight, isEnglish) },
+            { value: "dark", icon: Moon, label: tr(STR.themeDark, isEnglish) },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button" onClick={() => setTheme(opt.value)} aria-pressed={theme === opt.value}
+              className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-all ${
+                theme === opt.value ? "bg-sidebar-primary/15 text-sidebar-primary" : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
+              }`}
+            >
+              <opt.icon className="h-3.5 w-3.5" /> {opt.label}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-2 px-1">

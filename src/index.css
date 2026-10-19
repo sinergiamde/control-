@@ -51,6 +51,54 @@
     --warning: 38 92% 50%;
     --success: 142 76% 36%;
     --info: 210 60% 50%;
+
+    color-scheme: dark;
+  }
+
+  /* Light theme ("blanco"): white surfaces, near-black text, and the brand green darkened so it
+     stays readable as text on white (the neon green is only legible on black). Toggled from the
+     sidebar / Settings via ThemeContext. */
+  :root.light {
+    --background: 0 0% 98%;
+    --foreground: 0 0% 7%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 7%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 7%;
+
+    --primary: 100 85% 28%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 150 40% 90%;
+    --secondary-foreground: 150 48% 15%;
+
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 38%;
+
+    --accent: 0 0% 94%;
+    --accent-foreground: 0 0% 7%;
+
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 87%;
+    --input: 0 0% 87%;
+    --ring: 100 85% 28%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 15%;
+    --sidebar-primary: 100 85% 28%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 95%;
+    --sidebar-accent-foreground: 0 0% 7%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 100 85% 28%;
+
+    --neon: 100 85% 28%;
+
+    color-scheme: light;
   }
 }
 
@@ -138,6 +186,24 @@
     0%, 100% { border-color: hsl(96 100% 50% / 0.2); }
     50% { border-color: hsl(96 100% 50% / 0.6); }
   }
+}
+
+/* Glow effects are tuned for black backgrounds; on white they read as blur, so the light theme
+   swaps them for soft shadows. */
+.light .neon-text {
+  text-shadow: none;
+}
+.light .neon-glow {
+  box-shadow: 0 1px 3px hsl(0 0% 0% / 0.08), 0 0 0 1px hsl(var(--primary) / 0.15);
+}
+.light .neon-glow-hover:hover {
+  box-shadow: 0 4px 14px hsl(0 0% 0% / 0.12), 0 0 0 1px hsl(var(--primary) / 0.25);
+}
+.light .hover-lift:hover {
+  box-shadow: 0 8px 25px hsl(0 0% 0% / 0.08), 0 0 0 1px hsl(var(--primary) / 0.15);
+}
+.light .gradient-hero {
+  background: linear-gradient(135deg, hsl(0 0% 100%) 0%, hsl(0 0% 97%) 50%, hsl(100 30% 94%) 100%);
 }
 
 @layer utilities {

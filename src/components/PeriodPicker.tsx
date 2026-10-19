@@ -230,7 +230,7 @@ const PeriodPicker = ({ value, onChange, monthsWithData, daysWithData = [], isEn
                         if (d) setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
                         if (d && draftTo && d > draftTo) setDraftTo(undefined);
                       }}
-                      className="w-full h-9 rounded-md border border-border bg-muted px-2 text-sm text-foreground [color-scheme:dark]"
+                      className="w-full h-9 rounded-md border border-border bg-muted px-2 text-sm text-foreground"
                     />
                   </label>
                   <label className="space-y-1">
@@ -240,7 +240,7 @@ const PeriodPicker = ({ value, onChange, monthsWithData, daysWithData = [], isEn
                       value={toInputValue(draftTo)}
                       min={toInputValue(draftFrom)}
                       onChange={(e) => setDraftTo(fromInputValue(e.target.value))}
-                      className="w-full h-9 rounded-md border border-border bg-muted px-2 text-sm text-foreground [color-scheme:dark]"
+                      className="w-full h-9 rounded-md border border-border bg-muted px-2 text-sm text-foreground"
                     />
                   </label>
                 </div>
