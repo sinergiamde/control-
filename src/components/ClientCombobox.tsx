@@ -84,11 +84,9 @@ export const ClientCombobox = ({
     if (exactMatch) { select(exactMatch); return; }
 
     setCreating(true);
-    const { data, error } = await supabase
-      .from("clients")
-      .insert({ name: trimmedQuery, parent_id: createParentId })
-      .select("id, name, parent_id")
-      .single();
+    // create_client also gives the creator access to the new client (they own it).
+    const { data: newId, error } = await supabase.rpc("create_client", { _name: trimmedQuery });
+    const data = newId ? { id: newId, name: trimmedQuery, parent_id: null } : null;
     setCreating(false);
 
     if (error) {

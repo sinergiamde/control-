@@ -7,6 +7,8 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import AppLayout from "@/components/AppLayout";
 import Index from "./pages/Index";
+import Analyze from "./pages/Analyze";
+import Receipts from "./pages/Receipts";
 import Results from "./pages/Results";
 import Admin from "./pages/Admin";
 import History from "./pages/History";
@@ -29,9 +31,11 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Index />} />
-              {/* Everything behind login shares TaxForYou's sidebar (general dashboard, clients,
-                  admin tools). */}
+              {/* Everything behind login shares the sidebar. Home is "Analyze statement" — what people
+                  come to CTRL+ for. */}
               <Route element={<AppLayout />}>
+                <Route path="/analyze" element={<Analyze />} />
+                <Route path="/receipts" element={<Receipts />} />
                 <Route path="/dashboard" element={<GeneralDashboard />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/:clientId" element={<ClientDashboard />} />

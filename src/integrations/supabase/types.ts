@@ -222,9 +222,13 @@ export type Database = {
           client_id: string | null
           country: string | null
           created_at: string
+          designated_by: string | null
           id: string
           name: string
           phone: string | null
+          reviewed_at: string | null
+          subscribed: boolean
+          trial_ends_at: string
           updated_at: string
           user_id: string
         }
@@ -233,9 +237,13 @@ export type Database = {
           client_id?: string | null
           country?: string | null
           created_at?: string
+          designated_by?: string | null
           id?: string
           name?: string
           phone?: string | null
+          reviewed_at?: string | null
+          subscribed?: boolean
+          trial_ends_at?: string
           updated_at?: string
           user_id: string
         }
@@ -244,9 +252,13 @@ export type Database = {
           client_id?: string | null
           country?: string | null
           created_at?: string
+          designated_by?: string | null
           id?: string
           name?: string
           phone?: string | null
+          reviewed_at?: string | null
+          subscribed?: boolean
+          trial_ends_at?: string
           updated_at?: string
           user_id?: string
         }
@@ -256,6 +268,161 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_access: {
+        Row: {
+          client_id: string
+          created_at: string
+          granted_by: string | null
+          user_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          granted_by?: string | null
+          user_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          granted_by?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_access_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          data: Json
+          id: string
+          kind: string
+          read_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          data?: Json
+          id?: string
+          kind: string
+          read_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          id?: string
+          kind?: string
+          read_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      app_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: string
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
+      receipts: {
+        Row: {
+          amount: number | null
+          analysis_id: string | null
+          client_id: string
+          created_at: string
+          currency: string
+          extracted: Json | null
+          file_name: string
+          id: string
+          merchant: string
+          needs_review: string[]
+          note: string
+          receipt_date: string | null
+          storage_path: string
+          tax: number | null
+          txn_amount: number | null
+          txn_date: string | null
+          txn_desc: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          amount?: number | null
+          analysis_id?: string | null
+          client_id: string
+          created_at?: string
+          currency?: string
+          extracted?: Json | null
+          file_name?: string
+          id?: string
+          merchant?: string
+          needs_review?: string[]
+          note?: string
+          receipt_date?: string | null
+          storage_path: string
+          tax?: number | null
+          txn_amount?: number | null
+          txn_date?: string | null
+          txn_desc?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          amount?: number | null
+          analysis_id?: string | null
+          client_id?: string
+          created_at?: string
+          currency?: string
+          extracted?: Json | null
+          file_name?: string
+          id?: string
+          merchant?: string
+          needs_review?: string[]
+          note?: string
+          receipt_date?: string | null
+          storage_path?: string
+          tax?: number | null
+          txn_amount?: number | null
+          txn_date?: string | null
+          txn_desc?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receipts_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "analyses"
             referencedColumns: ["id"]
           },
         ]
@@ -285,6 +452,46 @@ export type Database = {
     Functions: {
       admin_delete_user: {
         Args: { _user_id: string }
+        Returns: undefined
+      }
+      admin_create_user: {
+        Args: { _email: string; _password: string; _name: string; _role: string; _client_ids: string[] }
+        Returns: string
+      }
+      admin_set_user_role: {
+        Args: { _user_id: string; _role: string }
+        Returns: undefined
+      }
+      can_manage_user: {
+        Args: { _user_id: string }
+        Returns: boolean
+      }
+      admin_set_user_plan: {
+        Args: { _user_id: string; _subscribed: boolean; _trial_ends_at?: string | null }
+        Returns: undefined
+      }
+      can_manage_client: {
+        Args: { _client_id: string }
+        Returns: boolean
+      }
+      can_upload: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      create_client: {
+        Args: { _name: string }
+        Returns: string
+      }
+      request_subscription: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      role_of: {
+        Args: { _user_id: string }
+        Returns: string
+      }
+      set_user_clients: {
+        Args: { _user_id: string; _client_ids: string[] }
         Returns: undefined
       }
       admin_delete_client: {
@@ -321,7 +528,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "user"
+      app_role: "admin" | "user" | "accountant" | "authorized"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -449,7 +656,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "user"],
+      app_role: ["admin", "user", "accountant", "authorized"],
     },
   },
 } as const

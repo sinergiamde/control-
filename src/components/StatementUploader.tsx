@@ -8,6 +8,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { ClientOption } from "@/components/ClientCombobox";
+import ClientChoice, { NEW_CLIENT, initialClientChoice, resolveClientChoice } from "@/components/ClientChoice";
+import { UploadLockedCard, useTrialStatus } from "@/components/SubscribePrompt";
 import { STR, tr } from "@/utils/i18n";
 import { normalizeAnalysisTransactions } from "@/utils/reportTypes";
 
@@ -85,19 +87,23 @@ export interface UploadOutcome {
 }
 
 interface StatementUploaderProps {
-  /** Companies a statement can be filed under here: the open company first, then its sub-companies. */
+  /** Clients a statement can be filed under here (inside a client's dashboard: just that client). */
   targets: ClientOption[];
   onUploaded: (outcome: UploadOutcome) => void;
   /** Lets the page guard in-app navigation while picked files haven't been analyzed yet. */
   onPendingChange?: (hasPending: boolean) => void;
+  /** Home screen: pick any of the person's clients or type a new one right in the flow. */
+  allowNewClient?: boolean;
+  title?: string;
+  onClientCreated?: (client: ClientOption) => void;
 }
 
 /** Drop/pick bank statements, analyze them with the AI, and save each one under the chosen
- * company — lives inside the company's own dashboard so nobody has to leave it to upload. */
-const StatementUploader = ({ targets, onUploaded, onPendingChange }: StatementUploaderProps) => {
+ * client — on the home screen (with "+ New client") and inside each client's dashboard. */
+const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClient = false, title, onClientCreated }: StatementUploaderProps) => {
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, session } = useAuth();
+  const { user, session, canManageClients } = useAuth();
   const { toast } = useToast();
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -105,12 +111,15 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange }: StatementUp
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentFileName, setCurrentFileName] = useState<string>("");
   const [processedCount, setProcessedCount] = useState(0);
-  const [targetId, setTargetId] = useState<string>(targets[0]?.id ?? "");
+  const [targetId, setTargetId] = useState<string>(() => (allowNewClient ? initialClientChoice(targets, true) : targets[0]?.id ?? ""));
+  const [newClientName, setNewClientName] = useState("");
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const { uploadsLocked } = useTrialStatus();
 
   useEffect(() => {
-    if (!targets.some((c) => c.id === targetId)) setTargetId(targets[0]?.id ?? "");
-  }, [targets, targetId]);
+    if (targetId === NEW_CLIENT || targets.some((c) => c.id === targetId)) return;
+    setTargetId(allowNewClient ? initialClientChoice(targets, true) : targets[0]?.id ?? "");
+  }, [targets, targetId, allowNewClient]);
 
   const addFiles = (newFiles: FileList | File[]) => {
     // A folder pick (webkitdirectory) hands back everything in it -- filter down to statement
@@ -228,7 +237,21 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange }: StatementUp
   };
 
   const handleAnalyze = async () => {
-    if (files.length === 0 || !user || !targetId) return;
+    if (files.length === 0 || !user) return;
+    const resolved = await resolveClientChoice(targetId, newClientName, {
+      empty: t("clientNameEmptyError"),
+      duplicate: t("clientDuplicateError"),
+    });
+    if ("error" in resolved) {
+      toast({ title: "Error", description: resolved.error, variant: "destructive" });
+      return;
+    }
+    const clientId = resolved.client.id;
+    if (resolved.created) {
+      setTargetId(clientId);
+      setNewClientName("");
+      onClientCreated?.(resolved.client);
+    }
     setLoading(true);
     setUploadProgress(0);
     setProcessedCount(0);
@@ -242,7 +265,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange }: StatementUp
       const f = files[i];
       setCurrentFileName(f.name);
       try {
-        const outcome = await analyzeOne(f, targetId);
+        const outcome = await analyzeOne(f, clientId);
         lastResult = outcome.data;
         lastAnalysisId = outcome.analysisId;
         saved++;
@@ -269,7 +292,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange }: StatementUp
       toast({ title: "✅", description: `${saved} ${t("analysesSavedWord")}` });
       const filesCount = files.length;
       setFiles([]); // nothing left pending -- clears the navigation guard too
-      onUploaded({ saved, filesCount, clientId: targetId, lastResult, lastAnalysisId });
+      onUploaded({ saved, filesCount, clientId, lastResult, lastAnalysisId });
     }
   };
 
@@ -288,16 +311,20 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange }: StatementUp
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasPendingFiles, onPendingChange]);
 
+  if (uploadsLocked) return <UploadLockedCard />;
+
+  const clientReady = targetId === NEW_CLIENT ? !!newClientName.trim() : !!targetId;
+
   return (
     <Card className="neon-border bg-card shadow-2xl">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-foreground">
           <Upload className="h-5 w-5 text-primary" />
-          {tr(STR.uploadForCompany, isEnglish)} {targets.find((c) => c.id === targetId)?.name ?? ""}
+          {title ?? `${tr(STR.uploadForCompany, isEnglish)} ${targets.find((c) => c.id === targetId)?.name ?? ""}`}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {targets.length > 1 && (
+        {!allowNewClient && targets.length > 1 && (
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground">{tr(STR.whichCompanyLabel, isEnglish)}</label>
             <Select value={targetId} onValueChange={setTargetId} disabled={loading}>
@@ -393,6 +420,19 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange }: StatementUp
           {tr(STR.orSelectFolder, isEnglish)}
         </button>
 
+        {allowNewClient && (
+          <ClientChoice
+            clients={targets}
+            value={targetId}
+            onChange={setTargetId}
+            newName={newClientName}
+            onNewNameChange={setNewClientName}
+            label={tr(STR.whichClientLabel, isEnglish)}
+            allowNew={canManageClients}
+            disabled={loading}
+          />
+        )}
+
         {loading && (
           <div className="space-y-2 animate-fade-in">
             <div className="flex justify-between text-xs text-muted-foreground">
@@ -410,7 +450,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange }: StatementUp
 
         <Button
           onClick={handleAnalyze}
-          disabled={files.length === 0 || loading || !targetId}
+          disabled={files.length === 0 || loading || !clientReady}
           className="w-full h-12 text-base font-bold neon-glow neon-glow-hover transition-all duration-300"
         >
           {loading ? (

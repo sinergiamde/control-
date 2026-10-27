@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Eye, EyeOff, Globe, KeyRound, Loader2, Mail, Moon, Palette, Save, Settings as SettingsIcon, Sun, Trash2, User as UserIcon } from "lucide-react";
+import { Camera, Eye, EyeOff, Globe, KeyRound, Loader2, Mail, Moon, Palette, Save, Settings as SettingsIcon, Sparkles, Sun, Trash2, User as UserIcon } from "lucide-react";
 import UserAvatar from "@/components/UserAvatar";
 import { FlagIcon } from "@/components/FlagIcon";
 import { Button } from "@/components/ui/button";
@@ -36,12 +36,75 @@ const resizeToSquare = (file: File): Promise<Blob> =>
     img.src = url;
   });
 
-/** Every user's own settings — TaxForYou staff and client companies alike: photo (their picture or
- * their company's logo), display name, the email they sign in with, language, and password. */
+/** TaxForYou admins only: where the "Subscribe" button sends people once their trial ends. */
+const SubscriptionSettingsCard = () => {
+  const { lang } = useLanguage();
+  const isEnglish = lang === "en";
+  const { toast } = useToast();
+  const [whatsapp, setWhatsapp] = useState("");
+  const [email, setEmail] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from("app_settings")
+      .select("key, value")
+      .in("key", ["subscribe_whatsapp", "subscribe_email"])
+      .then(({ data }) => {
+        setWhatsapp((data || []).find((r) => r.key === "subscribe_whatsapp")?.value || "");
+        setEmail((data || []).find((r) => r.key === "subscribe_email")?.value || "");
+      });
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("app_settings").upsert([
+      { key: "subscribe_whatsapp", value: whatsapp.replace(/\D/g, ""), updated_at: now },
+      { key: "subscribe_email", value: email.trim(), updated_at: now },
+    ]);
+    setSaving(false);
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "✅", description: tr(STR.settingsSaved, isEnglish) });
+  };
+
+  return (
+    <Card className="neon-border bg-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          {tr(STR.subscribeSettingsSection, isEnglish)}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{tr(STR.subscribeSettingsDesc, isEnglish)}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-foreground">{tr(STR.whatsappLabel, isEnglish)}</label>
+            <Input inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="13055551234" className="bg-muted border-border" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-foreground">{tr(STR.contactEmailLabel, isEnglish)}</label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="info@taxforyou.com" className="bg-muted border-border" />
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+            {tr(STR.saveWord, isEnglish)}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+/** Every user's own settings: photo (their picture or their business logo), display name, the
+ * email they sign in with, language, theme and password. */
 const Settings = () => {
   const { lang, setLang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, isAdmin } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -368,6 +431,8 @@ const Settings = () => {
           </div>
         </CardContent>
       </Card>
+
+      {isAdmin && <SubscriptionSettingsCard />}
     </main>
   );
 };

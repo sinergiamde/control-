@@ -35,6 +35,7 @@ import {
 import { STR, tr, translateCategory, pickText, pickArray } from "@/utils/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { openReceiptFile, receiptTxnKey, txnKey, type ReceiptRow } from "@/utils/receipts";
 
 interface LineItem {
   name: string;
@@ -48,6 +49,10 @@ interface LineItem {
    * so they simply don't get a reassign button. */
   sourceList?: TransactionList;
   sourceIndex?: number;
+  /** Identifies the raw transaction (date · description · amount) so a saved receipt can be shown
+   * next to it — the same key Receipts stores when the receipt is linked. */
+  txnKey?: string;
+  receipt?: ReceiptRow;
 }
 
 interface Section {
@@ -136,8 +141,8 @@ const AnimatedNumber = ({ value, prefix = "$", delay = 0 }: { value: number; pre
 };
 
 const CollapsibleSection = ({
-  section, index, onReassign,
-}: { section: Section; index: number; onReassign?: (item: LineItem) => void }) => {
+  section, index, onReassign, receiptLabel,
+}: { section: Section; index: number; onReassign?: (item: LineItem) => void; receiptLabel: string }) => {
   const [open, setOpen] = useState(false);
   const Icon = section.icon;
 
@@ -186,6 +191,16 @@ const CollapsibleSection = ({
                     )}
                     {item.detail && <p className="text-xs text-muted-foreground truncate">{item.detail}</p>}
                   </div>
+                  {item.receipt && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); openReceiptFile(item.receipt!.storage_path); }}
+                      className="mt-1 inline-flex max-w-full items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/20"
+                    >
+                      <Receipt className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{receiptLabel}{item.receipt.note ? ` · ${item.receipt.note}` : ""}</span>
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
                   <span className="text-xs text-muted-foreground w-12 text-right">{item.percentage.toFixed(1)}%</span>
@@ -287,6 +302,7 @@ const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number, isEngli
       category: item?.category ? translateCategory(String(item.category), isEnglish) : undefined,
       sourceList: item?.__list,
       sourceIndex: typeof item?.__idx === "number" ? item.__idx : undefined,
+      txnKey: txnKey(item?.date, item?.desc || item?.name, amount),
     };
   });
 
@@ -573,6 +589,17 @@ const Results = () => {
   const [reassignItem, setReassignItem] = useState<LineItem | null>(null);
   const [reassignTarget, setReassignTarget] = useState<string>("");
   const [savingReassign, setSavingReassign] = useState(false);
+  const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
+
+  // Receipts linked to this statement's transactions, shown next to each one (and in the exports).
+  useEffect(() => {
+    if (!analysisId) return;
+    supabase
+      .from("receipts")
+      .select("*")
+      .eq("analysis_id", analysisId)
+      .then(({ data }) => setReceipts((data as ReceiptRow[]) || []));
+  }, [analysisId]);
 
   if (!user) {
     navigate("/");
@@ -601,7 +628,31 @@ const Results = () => {
     );
   }
 
-  const results: ResultsData = transformAPIResponse(rawResults, isEnglish);
+  const receiptByKey = new Map(receipts.map((r) => [receiptTxnKey(r), r]));
+  const receiptWord = tr(STR.receiptWord, isEnglish);
+  const baseResults: ResultsData = transformAPIResponse(rawResults, isEnglish);
+  const results: ResultsData = receipts.length === 0 ? baseResults : {
+    ...baseResults,
+    sections: baseResults.sections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => {
+        const receipt = item.txnKey ? receiptByKey.get(item.txnKey) : undefined;
+        return receipt ? { ...item, receipt } : item;
+      }),
+    })),
+  };
+  // PDF / Excel have no chip to click: the backing receipt goes into the line's detail instead.
+  const exportResults: ResultsData = receipts.length === 0 ? results : {
+    ...results,
+    sections: results.sections.map((section) => ({
+      ...section,
+      items: section.items.map((item) =>
+        item.receipt
+          ? { ...item, detail: [item.detail, `${receiptWord}: ${item.receipt.note || item.receipt.merchant || "✓"}`].filter(Boolean).join(" • ") }
+          : item
+      ),
+    })),
+  };
 
   const openReassign = (item: LineItem) => {
     setReassignItem(item);
@@ -677,12 +728,12 @@ const Results = () => {
   };
 
   const handleDownloadExcel = async () => {
-    const { blob, fileName } = await generateProfessionalExcel(results, isEnglish);
+    const { blob, fileName } = await generateProfessionalExcel(exportResults, isEnglish);
     saveReportToStorage({ blob, fileName, type: "excel", clientId, analysisId, periodLabel: results.period || "" });
   };
 
   const handleDownloadPDF = () => {
-    const { blob, fileName } = generateProfessionalPDF(results, isEnglish);
+    const { blob, fileName } = generateProfessionalPDF(exportResults, isEnglish);
     saveReportToStorage({ blob, fileName, type: "pdf", clientId, analysisId, periodLabel: results.period || "" });
   };
 
@@ -846,7 +897,7 @@ const Results = () => {
             {tr(STR.detailedBreakdown, isEnglish)}
           </h2>
           {results.sections.map((section, i) => (
-            <CollapsibleSection key={section.title} section={section} index={i} onReassign={analysisId ? openReassign : undefined} />
+            <CollapsibleSection key={section.title} section={section} index={i} onReassign={analysisId ? openReassign : undefined} receiptLabel={receiptWord} />
           ))}
         </div>
 

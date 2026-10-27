@@ -95,7 +95,7 @@ const Login = () => {
       if (error) {
         toast({ title: "Error", description: error, variant: "destructive" });
       } else {
-        navigate("/dashboard");
+        navigate("/analyze");
       }
     }
     setSubmitting(false);
@@ -216,6 +216,8 @@ const Login = () => {
                 {isRegister ? t("register") : t("login")}
               </Button>
 
+              {/* Anyone can sign up and use the app right away during a 24-hour trial; TaxForYou is
+                  notified and assigns the role and clients from Users & permissions. */}
               <p className="text-center text-sm text-muted-foreground">
                 {isRegister ? t("hasAccount") : t("noAccount")}{" "}
                 <button type="button"

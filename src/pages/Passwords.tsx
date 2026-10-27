@@ -49,13 +49,14 @@ const Passwords = () => {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user || !isAdmin) { navigate("/dashboard"); return; }
+    if (!user || !isAdmin) { navigate("/analyze"); return; }
     (async () => {
       setLoading(true);
-      const [{ data: accounts, error }, { data: profiles }, { data: clients }] = await Promise.all([
+      const [{ data: accounts, error }, { data: profiles }, { data: clients }, { data: accessRows }] = await Promise.all([
         supabase.rpc("admin_list_users"),
-        supabase.from("profiles").select("user_id, name, client_id"),
+        supabase.from("profiles").select("user_id, name"),
         supabase.from("clients").select("id, name"),
+        supabase.from("client_access").select("client_id, user_id"),
       ]);
       if (error) {
         setLoadError(error.message);
@@ -64,6 +65,8 @@ const Passwords = () => {
       }
       const profileById = new Map((profiles || []).map((p) => [p.user_id, p]));
       const clientName = new Map((clients || []).map((c) => [c.id, c.name]));
+      const clientsOf = (userId: string) =>
+        (accessRows || []).filter((a) => a.user_id === userId).map((a) => clientName.get(a.client_id)).filter(Boolean).join(", ");
       setUsers(
         (accounts || []).map((a) => {
           const p = profileById.get(a.user_id);
@@ -71,7 +74,7 @@ const Passwords = () => {
             user_id: a.user_id,
             email: a.email || "—",
             name: p?.name || "—",
-            company: (p?.client_id && clientName.get(p.client_id)) || "",
+            company: clientsOf(a.user_id),
             last_sign_in_at: a.last_sign_in_at,
           };
         })

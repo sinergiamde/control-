@@ -9,7 +9,7 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && user) navigate("/dashboard");
+    if (!loading && user) navigate("/analyze");
   }, [user, loading, navigate]);
 
   if (loading) {

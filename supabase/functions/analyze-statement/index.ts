@@ -299,6 +299,15 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    // Once the 24-hour trial is over (and no subscription), stop before spending on the AI — saving
+    // the result would be refused by the database anyway.
+    const { data: allowed } = await supabaseClient.rpc("can_upload");
+    if (allowed === false) {
+      return new Response(JSON.stringify({ error: "Tu prueba gratuita terminó. Suscríbete para seguir analizando extractos." }), {
+        status: 402,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { fileBase64, mediaType, fileName } = await req.json();
 

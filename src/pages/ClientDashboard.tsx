@@ -49,9 +49,12 @@ const fmtShort = (n: number) => `$${Number(n || 0).toLocaleString("en-US", { max
  * statements behind those numbers (open or delete them right here), and the upload box. */
 const ClientDashboard = () => {
   const { clientId = "" } = useParams();
-  const { lang } = useLanguage();
+  const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, canManageClients, loading: authLoading } = useAuth();
+  // Everyone who works with a client sees all of its statements; admins and the client's owners
+  // also see who uploaded each one (authorized users can't delete).
+  const seesWholeCompany = isAdmin || canManageClients;
   const navigate = useNavigate();
   const { toast } = useToast();
   const { theme } = useTheme();
@@ -85,21 +88,20 @@ const ClientDashboard = () => {
     const allNodes = await fetchClientNodes();
     setNodes(allNodes);
     const ids = [clientId, ...allNodes.filter((n) => n.parent_id === clientId).map((n) => n.id)];
-    // RLS scopes this further: an admin gets every statement of the company, a company user only
-    // the ones they uploaded themselves.
+    // RLS scopes this to the clients this person may see.
     const [{ data }, { data: profiles }] = await Promise.all([
       supabase
         .from("analyses")
         .select("id, user_id, client_id, period, original_filename, created_at, full_analysis")
         .in("client_id", ids)
         .order("created_at", { ascending: false }),
-      isAdmin ? supabase.from("profiles").select("user_id, name") : Promise.resolve({ data: [] as { user_id: string; name: string }[] }),
+      seesWholeCompany ? supabase.from("profiles").select("user_id, name") : Promise.resolve({ data: [] as { user_id: string; name: string }[] }),
     ]);
     setRows((data as StatementRow[]) || []);
     setUserNames(new Map((profiles || []).map((p) => [p.user_id, p.name || "—"])));
     setSelectedIds(new Set());
     setLoading(false);
-  }, [clientId, isAdmin]);
+  }, [clientId, seesWholeCompany]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -269,10 +271,10 @@ const ClientDashboard = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <main className="flex-1 container mx-auto px-4 py-6 max-w-6xl space-y-6">
-        {/* Breadcrumb: TaxForYou › customer company › sub-company */}
+        {/* Breadcrumb: Clients › client (› sub-client) */}
         <nav className="flex items-center gap-1.5 text-sm text-muted-foreground flex-wrap">
           <button type="button" onClick={() => navigate("/clients")} className="inline-flex items-center gap-1 hover:text-primary">
-            <Crown className="h-3.5 w-3.5" /> TaxForYou
+            {isAdmin ? <><Crown className="h-3.5 w-3.5" /> TaxForYou</> : <><Building2 className="h-3.5 w-3.5" /> {t("clientsNav")}</>}
           </button>
           {parent && (
             <>
@@ -315,8 +317,6 @@ const ClientDashboard = () => {
             ))}
           </div>
         )}
-
-        {!isAdmin && <p className="text-xs text-muted-foreground -mt-2">{tr(STR.myHistoryNote, isEnglish)}</p>}
 
         {/* Period + downloads */}
         <Card className="neon-border">
@@ -458,7 +458,7 @@ const ClientDashboard = () => {
               <FileText className="h-4 w-4 text-primary" />
               {tr(STR.statementsOfCompany, isEnglish)} — {selectionLabel(selection, isEnglish)}
             </CardTitle>
-            {selectedIds.size > 0 && (
+            {canManageClients && selectedIds.size > 0 && (
               <Button
                 size="sm" variant="destructive"
                 disabled={deleting}
@@ -478,12 +478,14 @@ const ClientDashboard = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-8">
-                        <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-[hsl(var(--primary))]" aria-label="select all" />
+                        {canManageClients && (
+                          <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-[hsl(var(--primary))]" aria-label="select all" />
+                        )}
                       </TableHead>
                       <TableHead>{tr(STR.periodWord, isEnglish)}</TableHead>
                       <TableHead>{tr(STR.fileWord, isEnglish)}</TableHead>
                       {subCompanies.length > 0 && <TableHead>{tr(STR.companyColumnLabel, isEnglish)}</TableHead>}
-                      {isAdmin && <TableHead>{tr(STR.uploadedByColumn, isEnglish)}</TableHead>}
+                      {seesWholeCompany && <TableHead>{tr(STR.uploadedByColumn, isEnglish)}</TableHead>}
                       <TableHead className="text-right">{tr(STR.income, isEnglish)}</TableHead>
                       <TableHead className="text-right">{tr(STR.expenses, isEnglish)}</TableHead>
                       <TableHead className="text-center">{tr(STR.actionWord, isEnglish)}</TableHead>
@@ -499,12 +501,14 @@ const ClientDashboard = () => {
                           onClick={() => openStatement(s)}
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(s.row.id)}
-                              onChange={() => toggleSelected(s.row.id)}
-                              className="h-4 w-4 accent-[hsl(var(--primary))]"
-                            />
+                            {canManageClients && (
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(s.row.id)}
+                                onChange={() => toggleSelected(s.row.id)}
+                                className="h-4 w-4 accent-[hsl(var(--primary))]"
+                              />
+                            )}
                           </TableCell>
                           <TableCell className="whitespace-nowrap">
                             {statementPeriodLabel(s)}
@@ -518,7 +522,7 @@ const ClientDashboard = () => {
                           {subCompanies.length > 0 && (
                             <TableCell className="text-muted-foreground max-w-[160px] truncate">{nodeName(s.row.client_id)}</TableCell>
                           )}
-                          {isAdmin && (
+                          {seesWholeCompany && (
                             <TableCell className="text-muted-foreground max-w-[140px] truncate">{userNames.get(s.row.user_id) || "—"}</TableCell>
                           )}
                           <TableCell className="text-right text-primary">{fmt(t.revenue)}</TableCell>
@@ -528,14 +532,16 @@ const ClientDashboard = () => {
                               <Button size="sm" variant="outline" onClick={() => openStatement(s)}>
                                 <Eye className="h-4 w-4 mr-1" /> {tr(STR.viewWord, isEnglish)}
                               </Button>
-                              <Button
-                                size="sm" variant="ghost"
-                                disabled={deleting}
-                                onClick={() => deleteStatements([s.row.id])}
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {canManageClients && (
+                                <Button
+                                  size="sm" variant="ghost"
+                                  disabled={deleting}
+                                  onClick={() => deleteStatements([s.row.id])}
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>

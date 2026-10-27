@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Building2, CornerDownRight, Crown, FileText, Loader2, Search, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowRight, Building2, CornerDownRight, Crown, FileText, Loader2, Search, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import UserAvatar from "@/components/UserAvatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,25 +25,24 @@ interface CompanyUser {
   user_id: string;
   name: string;
   avatar_url: string | null;
-  client_id: string | null;
 }
 
 type SortKey = "recent" | "name" | "statements";
 
 const fmtShort = (n: number) => `$${Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
-/** TaxForYou's starting point: one card per customer company — logo, how many statements, the
- * latest one analyzed, totals — so you pick which company to review and open its own dashboard,
- * instead of seeing every company's numbers mixed together. */
+/** One card per client — logo, how many statements, the latest one analyzed, totals — so you pick
+ * which client to review and open its own dashboard, instead of every client's numbers mixed together. */
 const GeneralDashboard = () => {
   const { lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, canManageClients, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [nodes, setNodes] = useState<ClientNode[]>([]);
   const [statements, setStatements] = useState<StatementSummary[]>([]);
   const [users, setUsers] = useState<CompanyUser[]>([]);
+  const [access, setAccess] = useState<{ client_id: string; user_id: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -51,20 +51,20 @@ const GeneralDashboard = () => {
     if (authLoading || !user) return;
     (async () => {
       setLoading(true);
-      const [allNodes, { data }, { data: profiles }] = await Promise.all([
+      const [allNodes, { data }, { data: profiles }, { data: accessRows }] = await Promise.all([
         fetchClientNodes(),
         // Stored per-statement totals are enough for the cards — no need to pull every full analysis.
         supabase.from("analyses").select("id, client_id, created_at, original_filename, revenues_total, total_spent"),
-        isAdmin
-          ? supabase.from("profiles").select("user_id, name, avatar_url, client_id")
-          : Promise.resolve({ data: [] as CompanyUser[] }),
+        supabase.from("profiles").select("user_id, name, avatar_url"),
+        supabase.from("client_access").select("client_id, user_id"),
       ]);
       setNodes(allNodes);
       setStatements((data as StatementSummary[]) || []);
       setUsers((profiles as CompanyUser[]) || []);
+      setAccess(accessRows || []);
       setLoading(false);
     })();
-  }, [authLoading, user, isAdmin]);
+  }, [authLoading, user]);
 
   const companies = useMemo(() => {
     const roots = nodes.filter((n) => !n.parent_id || !nodes.some((p) => p.id === n.parent_id));
@@ -73,7 +73,8 @@ const GeneralDashboard = () => {
       const ids = new Set([root.id, ...subs.map((s) => s.id)]);
       const mine = statements.filter((s) => s.client_id && ids.has(s.client_id));
       const latest = mine.reduce<StatementSummary | null>((acc, s) => (!acc || s.created_at > acc.created_at ? s : acc), null);
-      const members = users.filter((u) => u.client_id === root.id);
+      const memberIds = new Set(access.filter((a) => a.client_id === root.id).map((a) => a.user_id));
+      const members = users.filter((u) => memberIds.has(u.user_id));
       return {
         root,
         subs,
@@ -82,11 +83,11 @@ const GeneralDashboard = () => {
         expenses: mine.reduce((sum, s) => sum + Number(s.total_spent || 0), 0),
         latest,
         members,
-        // A company user's photo doubles as the company logo when they uploaded one.
+        // The owner's photo doubles as the client's logo when they uploaded one.
         logo: members.find((m) => m.avatar_url)?.avatar_url || null,
       };
     });
-  }, [nodes, statements, users]);
+  }, [nodes, statements, users, access]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -115,7 +116,7 @@ const GeneralDashboard = () => {
     <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-7xl w-full mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center neon-glow">
-          <Crown className="h-6 w-6 text-primary" />
+          {isAdmin ? <Crown className="h-6 w-6 text-primary" /> : <Building2 className="h-6 w-6 text-primary" />}
         </div>
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{tr(STR.pickCompanyTitle, isEnglish)}</h1>
@@ -152,6 +153,11 @@ const GeneralDashboard = () => {
           <CardContent className="p-10 text-center">
             <Building2 className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
             <p className="text-muted-foreground">{tr(STR.noClientsYetLabel, isEnglish)}</p>
+            {canManageClients && !search.trim() && (
+              <Button onClick={() => navigate("/analyze")} className="neon-glow mt-4">
+                <Sparkles className="h-4 w-4 mr-1" /> {tr(STR.analyzeNav, isEnglish)}
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -170,9 +176,11 @@ const GeneralDashboard = () => {
                   <UserAvatar name={c.root.name} url={c.logo} className="w-14 h-14 rounded-xl text-xl" />
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-lg text-foreground truncate group-hover:text-primary transition-colors">{c.root.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {c.subs.length} {tr(STR.subCompaniesWord, isEnglish)}
-                    </p>
+                    {c.subs.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {c.subs.length} {tr(STR.subCompaniesWord, isEnglish)}
+                      </p>
+                    )}
                   </div>
                   <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>

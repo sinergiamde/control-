@@ -6,94 +6,74 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Loader2, Plus, Pencil, Trash2, Check, X, Building2, Search, CalendarRange,
-  ChevronRight, CornerDownRight, Crown, LayoutDashboard, User as UserIcon,
+  Loader2, Plus, Pencil, Trash2, Check, X, Building2, Search, Crown, LayoutDashboard, User as UserIcon,
 } from "lucide-react";
 import { fetchClientNodes, type ClientNode } from "@/utils/clientTree";
 import { STR, tr } from "@/utils/i18n";
 
-interface CompanyUser {
-  user_id: string;
-  name: string;
-  client_id: string | null;
-}
+const isDuplicateError = (message: string) => /duplicate|unique|23505/i.test(message);
 
-const TOP_LEVEL = "__top__";
-
-/** TaxForYou → customer companies ("Pepito Pérez") → the sub-companies each one manages.
- * Admins see and organize the whole tree; a company user sees only their own company and can add
- * sub-companies to it (RLS enforces the same scoping server-side). */
+/** Every client the signed-in person works with (RLS scopes it: TaxForYou admins see all, everyone
+ * else the clients they created or were given). Users and accountants add, rename and delete their
+ * clients here; authorized users only open the ones shared with them. */
 const Clients = () => {
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, profile, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, canManageClients, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const [nodes, setNodes] = useState<ClientNode[]>([]);
   const [statementCounts, setStatementCounts] = useState<Map<string, number>>(new Map());
-  const [users, setUsers] = useState<CompanyUser[]>([]);
+  const [members, setMembers] = useState<Map<string, string[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [newName, setNewName] = useState("");
-  const [newSubNames, setNewSubNames] = useState<Record<string, string>>({});
-  const [creatingFor, setCreatingFor] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [movingId, setMovingId] = useState<string | null>(null);
 
   const fetchAll = async () => {
     setLoading(true);
-    const [clientRows, { data: analysisRows }, { data: profileRows }] = await Promise.all([
+    const [clientRows, { data: analysisRows }, { data: accessRows }, { data: profileRows }] = await Promise.all([
       fetchClientNodes(),
       supabase.from("analyses").select("client_id"),
-      isAdmin
-        ? supabase.from("profiles").select("user_id, name, client_id")
-        : Promise.resolve({ data: [] as CompanyUser[] }),
+      supabase.from("client_access").select("client_id, user_id"),
+      supabase.from("profiles").select("user_id, name"),
     ]);
     const counts = new Map<string, number>();
     (analysisRows || []).forEach((r: { client_id: string | null }) => {
       if (r.client_id) counts.set(r.client_id, (counts.get(r.client_id) || 0) + 1);
     });
+    // Who works with each client — only the names this person may see (admins: everyone).
+    const names = new Map((profileRows || []).map((p) => [p.user_id, p.name || ""]));
+    const byClient = new Map<string, string[]>();
+    (accessRows || []).forEach((a) => {
+      if (a.user_id === user?.id) return;
+      const name = names.get(a.user_id);
+      if (name) byClient.set(a.client_id, [...(byClient.get(a.client_id) || []), name]);
+    });
     setNodes(clientRows);
     setStatementCounts(counts);
-    setUsers((profileRows as CompanyUser[]) || []);
-    // A company user only has their one company — open it straight away.
-    const roots = clientRows.filter((c) => !c.parent_id);
-    if (roots.length === 1) setExpanded(new Set([roots[0].id]));
+    setMembers(byClient);
     setLoading(false);
   };
 
   useEffect(() => {
     if (!authLoading && user) fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, isAdmin]);
+  }, [authLoading, user]);
 
-  // Hooks must all run before the early returns below (see the note that used to live here:
-  // a hook declared after an early return crashes the page on a fresh load of /clients).
-  const tree = useMemo(() => {
+  const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const ids = new Set(nodes.map((n) => n.id));
-    const roots = nodes
-      .filter((n) => !n.parent_id || !ids.has(n.parent_id))
+    return nodes
+      .filter((n) => !q || n.name.toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
-    return roots
-      .map((root) => {
-        const children = nodes.filter((n) => n.parent_id === root.id).sort((a, b) => a.name.localeCompare(b.name));
-        const rootMatches = !q || root.name.toLowerCase().includes(q);
-        const shownChildren = rootMatches ? children : children.filter((c) => c.name.toLowerCase().includes(q));
-        return { root, children, shownChildren, visible: rootMatches || shownChildren.length > 0 };
-      })
-      .filter((g) => g.visible);
   }, [nodes, search]);
-
-  const topLevel = useMemo(() => nodes.filter((n) => !n.parent_id).sort((a, b) => a.name.localeCompare(b.name)), [nodes]);
 
   if (authLoading) {
     return (
@@ -108,46 +88,23 @@ const Clients = () => {
     return null;
   }
 
-  const isDuplicateError = (message: string) => /duplicate key|unique/i.test(message);
-  const hasNoCompany = !isAdmin && !profile?.client_id;
+  const fail = (description: string) => toast({ title: "Error", description, variant: "destructive" });
 
-  const toggle = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const handleCreate = async (parentId: string | null) => {
-    const name = (parentId ? newSubNames[parentId] || "" : newName).trim();
-    if (!name) {
-      toast({ title: "Error", description: t("clientNameEmptyError"), variant: "destructive" });
+  // Always clickable: an empty name or a duplicate gets a clear message instead of a dead button.
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) { fail(t("clientNameEmptyError")); return; }
+    if (nodes.some((n) => n.name.trim().toLowerCase() === name.toLowerCase())) { fail(t("clientDuplicateError")); return; }
+    setCreating(true);
+    const { data: id, error } = await supabase.rpc("create_client", { _name: name });
+    setCreating(false);
+    if (error || !id) {
+      fail(error && isDuplicateError(`${error.message} ${error.code}`) ? t("clientDuplicateError") : error?.message || "—");
       return;
     }
-    setCreatingFor(parentId ?? TOP_LEVEL);
-    const { data, error } = await supabase
-      .from("clients")
-      .insert({ name, parent_id: parentId })
-      .select("id, name, parent_id")
-      .single();
-    setCreatingFor(null);
-    if (error) {
-      toast({
-        title: "Error",
-        description: isDuplicateError(error.message) ? t("clientDuplicateError") : error.message,
-        variant: "destructive",
-      });
-      return;
-    }
-    setNodes((prev) => [...prev, data as ClientNode]);
-    if (parentId) {
-      setNewSubNames((prev) => ({ ...prev, [parentId]: "" }));
-      setExpanded((prev) => new Set(prev).add(parentId));
-    } else {
-      setNewName("");
-    }
-    toast({ title: "✅", description: t("clientCreated") });
+    setNodes((prev) => [...prev, { id, name, parent_id: null }]);
+    setNewName("");
+    toast({ title: "✅", description: `${t("clientCreated")} — ${name}` });
   };
 
   const startEdit = (client: ClientNode) => {
@@ -162,19 +119,12 @@ const Clients = () => {
 
   const handleSaveEdit = async (id: string) => {
     const name = editingName.trim();
-    if (!name) {
-      toast({ title: "Error", description: t("clientNameEmptyError"), variant: "destructive" });
-      return;
-    }
+    if (!name) { fail(t("clientNameEmptyError")); return; }
     setSaving(true);
     const { data, error } = await supabase.from("clients").update({ name }).eq("id", id).select("id");
     setSaving(false);
     if (error || !data?.length) {
-      toast({
-        title: "Error",
-        description: error && isDuplicateError(error.message) ? t("clientDuplicateError") : error?.message || "—",
-        variant: "destructive",
-      });
+      fail(error && isDuplicateError(`${error.message} ${error.code}`) ? t("clientDuplicateError") : error?.message || "—");
       return;
     }
     setNodes((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
@@ -182,28 +132,8 @@ const Clients = () => {
     cancelEdit();
   };
 
-  const handleMove = async (client: ClientNode, target: string) => {
-    const parentId = target === TOP_LEVEL ? null : target;
-    if ((client.parent_id ?? null) === parentId) return;
-    setMovingId(client.id);
-    const { error } = await supabase.from("clients").update({ parent_id: parentId }).eq("id", client.id);
-    setMovingId(null);
-    if (error) {
-      toast({
-        title: "Error",
-        description: isDuplicateError(error.message) ? t("clientDuplicateError") : error.message,
-        variant: "destructive",
-      });
-      return;
-    }
-    setNodes((prev) => prev.map((c) => (c.id === client.id ? { ...c, parent_id: parentId } : c)));
-    if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
-    toast({ title: "✅", description: t("companyMoved") });
-  };
-
-  /** Deletes the company together with its sub-companies, statements and saved reports (TaxForYou
-   * cleaning out a client it no longer serves). The report files go first through the Storage API —
-   * storage can't be cleaned from SQL — then admin_delete_client removes every row in one transaction. */
+  /** Deletes the client with its statements, receipts and saved reports. Files go first through the
+   * Storage API (storage can't be cleaned from SQL), then admin_delete_client removes every row. */
   const handleDelete = async (client: ClientNode) => {
     const ids = [client.id, ...nodes.filter((n) => n.parent_id === client.id).map((n) => n.id)];
     const statements = ids.reduce((sum, id) => sum + (statementCounts.get(id) || 0), 0);
@@ -214,101 +144,23 @@ const Clients = () => {
     if (!window.confirm(message)) return;
 
     setDeletingId(client.id);
-    const { data: reportRows } = await supabase.from("reports").select("storage_path").in("client_id", ids);
-    const paths = (reportRows || []).map((r) => r.storage_path).filter(Boolean);
-    if (paths.length > 0) await supabase.storage.from("reports").remove(paths);
+    const [{ data: reportRows }, { data: receiptRows }] = await Promise.all([
+      supabase.from("reports").select("storage_path").in("client_id", ids),
+      supabase.from("receipts").select("storage_path").in("client_id", ids),
+    ]);
+    const reportPaths = (reportRows || []).map((r) => r.storage_path).filter(Boolean);
+    const receiptPaths = (receiptRows || []).map((r) => r.storage_path).filter(Boolean);
+    if (reportPaths.length > 0) await supabase.storage.from("reports").remove(reportPaths);
+    if (receiptPaths.length > 0) await supabase.storage.from("receipts").remove(receiptPaths);
 
     const { data, error } = await supabase.rpc("admin_delete_client", { _client_id: client.id });
     setDeletingId(null);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-      return;
-    }
+    if (error) { fail(error.message); return; }
     const removed = new Set(ids);
     setNodes((prev) => prev.filter((c) => !removed.has(c.id)));
     const deletedStatements = (data as { statements?: number } | null)?.statements ?? statements;
     toast({ title: "✅", description: tr(STR.companyDeletedSummary, isEnglish).replace("{statements}", String(deletedStatements)) });
   };
-
-  const openDashboard = (client: ClientNode) => navigate(`/clients/${client.id}`);
-
-  /** Rename / move / delete controls shared by company and sub-company rows. */
-  const renderRowActions = (client: ClientNode, hasChildren: boolean) => {
-    // A company user can rename the sub-companies under their company, not their company itself.
-    const canRename = isAdmin || !!client.parent_id;
-    return (
-      <div className="flex items-center gap-1 shrink-0">
-        <Button
-          size="sm" variant="outline"
-          onClick={() => openDashboard(client)}
-          className="text-primary hover:text-primary hover:bg-primary/10"
-        >
-          <LayoutDashboard className="h-4 w-4 sm:mr-1" />
-          <span className="hidden sm:inline">{tr(STR.openCompany, isEnglish)}</span>
-        </Button>
-        {isAdmin && !hasChildren && (
-          <Select value={client.parent_id ?? TOP_LEVEL} onValueChange={(v) => handleMove(client, v)}>
-            <SelectTrigger
-              className="h-9 w-9 sm:w-auto px-2 text-xs text-muted-foreground"
-              title={t("moveToLabel")}
-              disabled={movingId === client.id}
-            >
-              {movingId === client.id ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <span className="hidden sm:inline"><SelectValue placeholder={t("moveToLabel")}>{t("moveToLabel")}</SelectValue></span>
-              )}
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TOP_LEVEL}>{t("topLevelOption")}</SelectItem>
-              {topLevel
-                .filter((c) => c.id !== client.id)
-                .map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        )}
-        {canRename && (
-          <Button size="sm" variant="ghost" onClick={() => startEdit(client)}
-            className="text-muted-foreground hover:text-primary hover:bg-primary/10">
-            <Pencil className="h-4 w-4" />
-          </Button>
-        )}
-        {isAdmin && (
-          <Button
-            size="sm" variant="ghost"
-            disabled={deletingId === client.id}
-            onClick={() => handleDelete(client)}
-            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-          >
-            {deletingId === client.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-          </Button>
-        )}
-      </div>
-    );
-  };
-
-  const renderEditRow = (id: string) => (
-    <>
-      <Input
-        value={editingName}
-        onChange={(e) => setEditingName(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") handleSaveEdit(id); if (e.key === "Escape") cancelEdit(); }}
-        autoFocus
-        className="bg-muted border-border text-foreground h-9"
-      />
-      <div className="flex items-center gap-1 shrink-0">
-        <Button size="sm" variant="ghost" disabled={saving} onClick={() => handleSaveEdit(id)}
-          className="text-primary hover:text-primary hover:bg-primary/10">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-        </Button>
-        <Button size="sm" variant="ghost" disabled={saving} onClick={cancelEdit} className="text-muted-foreground">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-    </>
-  );
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -323,29 +175,20 @@ const Clients = () => {
           </div>
         </div>
 
-        {hasNoCompany && (
-          <Card className="border-destructive/50 bg-destructive/5 mb-6">
-            <CardContent className="p-4 text-sm text-destructive font-medium">
-              {tr(STR.noCompanyAssigned, isEnglish)}
-            </CardContent>
-          </Card>
-        )}
-
-        {isAdmin && (
+        {canManageClients && (
           <Card className="neon-border bg-card shadow-2xl mb-6 opacity-0 animate-scale-in stagger-2">
             <CardContent className="p-4">
               <div className="flex flex-col sm:flex-row gap-2">
                 <Input
                   placeholder={t("clientNamePlaceholder")}
                   value={newName}
+                  maxLength={150}
                   onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) handleCreate(null); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
                   className="bg-muted border-border text-foreground"
                 />
-                {/* Disabled while empty instead of only validating on click — a click that produces
-                    nothing but an error toast reads like the button is broken. */}
-                <Button onClick={() => handleCreate(null)} disabled={creatingFor === TOP_LEVEL || !newName.trim()} className="neon-glow shrink-0">
-                  {creatingFor === TOP_LEVEL ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
+                <Button onClick={handleCreate} disabled={creating} className="neon-glow shrink-0">
+                  {creating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
                   {t("addClient")}
                 </Button>
               </div>
@@ -356,20 +199,13 @@ const Clients = () => {
         <Card className="neon-border bg-card shadow-2xl opacity-0 animate-slide-up stagger-3">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-4 flex-wrap">
-              {isAdmin ? (
-                <CardTitle className="flex items-center gap-2 text-foreground">
-                  <Crown className="h-5 w-5 text-primary" />
-                  TaxForYou
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {t("ownerCaption")} · {topLevel.length} {t("customerCompaniesWord")}
-                  </span>
-                </CardTitle>
-              ) : (
-                <CardTitle className="flex items-center gap-2 text-foreground">
-                  <Building2 className="h-5 w-5 text-primary" />
-                  {t("clientsPageTitle")}
-                </CardTitle>
-              )}
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                {isAdmin ? <Crown className="h-5 w-5 text-primary" /> : <Building2 className="h-5 w-5 text-primary" />}
+                {isAdmin ? "TaxForYou" : t("clientsPageTitle")}
+                <span className="text-xs font-normal text-muted-foreground">
+                  {isAdmin && `${t("ownerCaption")} · `}{nodes.length} {t("customerCompaniesWord")}
+                </span>
+              </CardTitle>
               <div className="relative w-full max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -386,115 +222,88 @@ const Clients = () => {
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : tree.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">{t("noClientsYet")}</p>
+            ) : shown.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">
+                {!canManageClients && !search.trim() ? tr(STR.noClientsShared, isEnglish) : t("noClientsYet")}
+              </p>
             ) : (
               <div className="space-y-2">
-                {tree.map(({ root, children, shownChildren }, i) => {
-                  const isOpen = expanded.has(root.id) || !!search.trim();
-                  const totalStatements = [root, ...children].reduce((sum, c) => sum + (statementCounts.get(c.id) || 0), 0);
-                  const companyUsers = users.filter((u) => u.client_id === root.id);
-                  return (
-                    <div
-                      key={root.id}
-                      className="rounded-lg border border-border/60 bg-muted/20 opacity-0 animate-fade-in"
-                      style={{ animationDelay: `${0.03 * i}s` }}
-                    >
-                      <div className="flex items-center justify-between gap-3 p-3">
-                        {editingId === root.id ? (
-                          renderEditRow(root.id)
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-2 min-w-0">
-                              <button type="button" onClick={() => toggle(root.id)} className="p-1 -m-1 rounded hover:bg-muted" aria-label="expand">
-                                <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                              </button>
-                              <button type="button" onClick={() => openDashboard(root)} className="flex items-center gap-2 min-w-0 text-left group">
-                              <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                                {root.name[0]?.toUpperCase() || "?"}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-semibold text-foreground truncate group-hover:text-primary">{root.name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {children.length} {t("subCompaniesWord")} · {totalStatements} {t("statementsCountLabel")}
-                                  {isAdmin && ` · ${companyUsers.length} ${t("usersWord")}`}
-                                </p>
-                              </div>
-                              </button>
-                            </div>
-                            {renderRowActions(root, children.length > 0)}
-                          </>
-                        )}
-                      </div>
-
-                      {isOpen && (
-                        <div className="border-t border-border/40 px-3 pb-3 pt-2 space-y-1">
-                          {shownChildren.length === 0 && !search.trim() && (
-                            <p className="text-xs text-muted-foreground pl-8 py-1">{t("noSubCompanies")}</p>
-                          )}
-                          {shownChildren.map((child) => (
-                            <div key={child.id} className="flex items-center justify-between gap-3 py-1.5 pl-6">
-                              {editingId === child.id ? (
-                                renderEditRow(child.id)
-                              ) : (
-                                <>
-                                  <button type="button" onClick={() => openDashboard(child)} className="flex items-center gap-2 min-w-0 text-left group">
-                                    <CornerDownRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                    <span className="font-medium text-foreground truncate group-hover:text-primary">{child.name}</span>
-                                    <span className="text-xs text-muted-foreground shrink-0">
-                                      ({statementCounts.get(child.id) || 0} {t("statementsCountLabel")})
-                                    </span>
-                                  </button>
-                                  {renderRowActions(child, false)}
-                                </>
-                              )}
-                            </div>
-                          ))}
-
-                          <div className="flex gap-2 pl-6 pt-1">
-                            <Input
-                              placeholder={`${t("subCompanyPlaceholder")} ${root.name}`}
-                              value={newSubNames[root.id] || ""}
-                              onChange={(e) => setNewSubNames((prev) => ({ ...prev, [root.id]: e.target.value }))}
-                              onKeyDown={(e) => { if (e.key === "Enter" && (newSubNames[root.id] || "").trim()) handleCreate(root.id); }}
-                              className="bg-muted border-border text-foreground h-9 text-sm"
-                            />
-                            <Button
-                              size="sm" variant="outline"
-                              onClick={() => handleCreate(root.id)}
-                              disabled={creatingFor === root.id || !(newSubNames[root.id] || "").trim()}
-                              className="shrink-0 h-9"
-                            >
-                              {creatingFor === root.id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-                              {t("addSubCompany")}
+                {shown.map((client, i) => (
+                  <div
+                    key={client.id}
+                    className="rounded-lg border border-border/60 bg-muted/20 opacity-0 animate-fade-in"
+                    style={{ animationDelay: `${0.03 * i}s` }}
+                  >
+                    <div className="flex items-center justify-between gap-3 p-3">
+                      {editingId === client.id ? (
+                        <>
+                          <Input
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleSaveEdit(client.id); if (e.key === "Escape") cancelEdit(); }}
+                            autoFocus
+                            maxLength={150}
+                            className="bg-muted border-border text-foreground h-9"
+                          />
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button size="sm" variant="ghost" disabled={saving} onClick={() => handleSaveEdit(client.id)}
+                              className="text-primary hover:text-primary hover:bg-primary/10">
+                              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={saving} onClick={cancelEdit} className="text-muted-foreground">
+                              <X className="h-4 w-4" />
                             </Button>
                           </div>
-
-                          {isAdmin && companyUsers.length > 0 && (
-                            <div className="pl-6 pt-3">
-                              <p className="text-xs font-medium text-muted-foreground mb-1.5">{t("companyUsersLabel")}</p>
-                              <div className="flex flex-wrap gap-2">
-                                {companyUsers.map((u) => (
-                                  <Button
-                                    key={u.user_id}
-                                    size="sm" variant="outline"
-                                    className="h-7 text-xs"
-                                    onClick={() => navigate("/history", { state: { userId: u.user_id } })}
-                                    title={t("viewHistoryWord")}
-                                  >
-                                    <UserIcon className="h-3.5 w-3.5 mr-1" />
-                                    {u.name || "—"}
-                                    <CalendarRange className="h-3.5 w-3.5 ml-1.5 text-primary" />
-                                  </Button>
-                                ))}
-                              </div>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" onClick={() => navigate(`/clients/${client.id}`)} className="flex items-center gap-2 min-w-0 text-left group">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                              {client.name[0]?.toUpperCase() || "?"}
                             </div>
-                          )}
-                        </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-foreground truncate group-hover:text-primary">{client.name}</p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {statementCounts.get(client.id) || 0} {t("statementsCountLabel")}
+                                {(members.get(client.id) || []).length > 0 && (
+                                  <span className="inline-flex items-center gap-1 ml-1.5">
+                                    · <UserIcon className="h-3 w-3" /> {(members.get(client.id) || []).join(", ")}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              size="sm" variant="outline"
+                              onClick={() => navigate(`/clients/${client.id}`)}
+                              className="text-primary hover:text-primary hover:bg-primary/10"
+                            >
+                              <LayoutDashboard className="h-4 w-4 sm:mr-1" />
+                              <span className="hidden sm:inline">{tr(STR.openCompany, isEnglish)}</span>
+                            </Button>
+                            {canManageClients && (
+                              <>
+                                <Button size="sm" variant="ghost" onClick={() => startEdit(client)}
+                                  className="text-muted-foreground hover:text-primary hover:bg-primary/10">
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm" variant="ghost"
+                                  disabled={deletingId === client.id}
+                                  onClick={() => handleDelete(client)}
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  {deletingId === client.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </>
                       )}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

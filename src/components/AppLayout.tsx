@@ -1,12 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Building2, ChevronRight, CornerDownRight, KeyRound, LayoutDashboard, LogOut, Menu, Moon, Settings as SettingsIcon, ShieldCheck, Sun, X,
+  Building2, ChevronRight, CornerDownRight, Crown, KeyRound, LayoutDashboard, LogOut, Menu, Moon, Receipt, Settings as SettingsIcon,
+  ShieldCheck, Sparkles, Sun, Users, X,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { FlagIcon } from "@/components/FlagIcon";
+import NotificationsBell from "@/components/NotificationsBell";
+import { TrialBanner, TrialEndedDialog } from "@/components/SubscribePrompt";
 import UserAvatar from "@/components/UserAvatar";
 import { fetchClientNodes, type ClientNode } from "@/utils/clientTree";
 import { STR, tr } from "@/utils/i18n";
@@ -34,12 +37,14 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
   <p className="px-2.5 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/35 mb-1.5">{children}</p>
 );
 
-/** CTRL+ is TaxForYou's SaaS: the sidebar is its control panel — the firm-wide dashboard, every
- * customer company (expandable to the companies each one manages), and the admin tools. */
+/** CTRL+ by TaxForYou. The sidebar leads with the two things people come for — analyze a statement,
+ * upload a receipt — then their dashboard and clients, and the admin tools for who may use them.
+ * TaxForYou's own brand (and crown) is reserved for its administrators; everyone else sees their
+ * own account name. */
 const AppLayout = () => {
   const { lang, setLang, t } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, profile, isAdmin, logout, loading } = useAuth();
+  const { user, profile, role, isAdmin, canManageClients, logout, loading } = useAuth();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -91,24 +96,59 @@ const AppLayout = () => {
     });
 
   const displayName = profile?.name || user?.email?.split("@")[0] || t("userFallback");
+  const roleLabel = tr(role === "accountant" ? STR.roleAccountant : role === "authorized" ? STR.roleAuthorized : STR.roleUser, isEnglish);
 
   const sidebar = (
     <aside className="w-64 h-full bg-sidebar border-r border-sidebar-border flex flex-col">
       <div className="h-16 flex items-center justify-between gap-2 px-4 border-b border-sidebar-border shrink-0">
-        <button type="button" onClick={() => go("/dashboard")} className="flex items-baseline gap-2">
+        <button type="button" onClick={() => go("/analyze")} className="flex items-baseline gap-2">
           <span className="text-xl font-black tracking-tight text-sidebar-primary neon-text">CTRL+</span>
           <span className="text-xs font-light text-sidebar-foreground/60">
             by <span className="text-sidebar-primary/80 font-medium">TaxForYou</span>
           </span>
         </button>
-        <button type="button" onClick={() => setMobileOpen(false)} className="md:hidden text-sidebar-foreground/60" aria-label="close">
-          <X className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <NotificationsBell refreshKey={location.pathname} onNavigate={go} />
+          <button type="button" onClick={() => setMobileOpen(false)} className="md:hidden text-sidebar-foreground/60" aria-label="close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            onClick={() => go("/analyze")}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-bold transition-all bg-sidebar-primary text-sidebar-primary-foreground hover:brightness-110 neon-glow ${
+              location.pathname === "/analyze" ? "ring-2 ring-sidebar-primary/40 ring-offset-2 ring-offset-sidebar" : ""
+            }`}
+          >
+            <Sparkles className="h-4 w-4 shrink-0" />
+            {tr(STR.analyzeNav, isEnglish)}
+          </button>
+          <button
+            type="button"
+            onClick={() => go("/receipts")}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-all ${
+              location.pathname === "/receipts"
+                ? "border-sidebar-primary bg-sidebar-primary/15 text-sidebar-primary"
+                : "border-sidebar-primary/40 text-sidebar-primary hover:bg-sidebar-primary/10"
+            }`}
+          >
+            <Receipt className="h-4 w-4 shrink-0" />
+            {tr(STR.uploadReceiptNav, isEnglish)}
+          </button>
+        </div>
+
         <div className="space-y-1">
-          <SectionLabel>TaxForYou</SectionLabel>
+          <SectionLabel>
+            {isAdmin ? (
+              <span className="inline-flex items-center gap-1"><Crown className="h-3 w-3" /> TaxForYou</span>
+            ) : (
+              <span className="normal-case tracking-normal text-[11px]">{displayName}</span>
+            )}
+          </SectionLabel>
           <button type="button" onClick={() => go("/dashboard")} className={linkClass(location.pathname === "/dashboard")}>
             <LayoutDashboard className="h-4 w-4 shrink-0" />
             <span className="truncate">{tr(STR.generalDashboardNav, isEnglish)}</span>
@@ -188,7 +228,7 @@ const AppLayout = () => {
           )}
         </div>
 
-        {isAdmin && (
+        {isAdmin ? (
           <div className="space-y-1">
             <SectionLabel>{tr(STR.adminSectionLabel, isEnglish)}</SectionLabel>
             <button type="button" onClick={() => go("/admin")} className={linkClass(location.pathname === "/admin")}>
@@ -198,6 +238,14 @@ const AppLayout = () => {
             <button type="button" onClick={() => go("/passwords")} className={linkClass(location.pathname === "/passwords")}>
               <KeyRound className="h-4 w-4 shrink-0" />
               <span className="truncate">{tr(STR.passwordsNav, isEnglish)}</span>
+            </button>
+          </div>
+        ) : canManageClients && (
+          <div className="space-y-1">
+            <SectionLabel>{tr(STR.adminSectionLabel, isEnglish)}</SectionLabel>
+            <button type="button" onClick={() => go("/admin")} className={linkClass(location.pathname === "/admin")}>
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="truncate">{tr(STR.authorizedUsersNav, isEnglish)}</span>
             </button>
           </div>
         )}
@@ -258,7 +306,7 @@ const AppLayout = () => {
             <UserAvatar name={displayName} url={profile?.avatar_url} className="w-9 h-9" />
             <div className="min-w-0 flex-1">
               <p className="text-xs text-sidebar-foreground/80 truncate">{displayName}</p>
-              <p className="text-[10px] text-sidebar-primary/80">{isAdmin ? "Admin · TaxForYou" : tr(STR.settingsNav, isEnglish)}</p>
+              <p className="text-[10px] text-sidebar-primary/80">{isAdmin ? `${tr(STR.roleAdmin, isEnglish)} · TaxForYou` : roleLabel}</p>
             </div>
           </button>
           <button
@@ -291,7 +339,9 @@ const AppLayout = () => {
             </button>
             <span className="text-lg font-black tracking-tight text-primary neon-text">CTRL+</span>
           </div>
+          <TrialBanner />
           <Outlet />
+          <TrialEndedDialog />
         </div>
       </div>
     </NavGuardContext.Provider>

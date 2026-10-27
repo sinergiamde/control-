@@ -116,7 +116,10 @@ const getStatementYear = (row: AnalysisRow) => {
 type RangeOption = "all" | "last3" | "last6" | string;
 
 const History = () => {
-  const { user, session, isAdmin, loading: authLoading } = useAuth();
+  const { user, session, isAdmin: isTaxForYouAdmin, canManageClients, loading: authLoading } = useAuth();
+  // Client owners see everything filed under their clients (their authorized users' uploads too),
+  // so they get the same "uploaded by" filter as TaxForYou admins.
+  const isAdmin = isTaxForYouAdmin || canManageClients;
   const { lang } = useLanguage();
   const isEnglish = lang === "en";
   const navigate = useNavigate();
