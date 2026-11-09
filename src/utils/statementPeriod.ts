@@ -26,6 +26,11 @@ export interface Txn {
   amount: number;
   date: Date;
   category: string;
+  /** Which saved statement it belongs to, and the raw date/description as stored — enough to find
+   * the transaction again when its category is changed. */
+  analysisId: string;
+  rawDate: string;
+  desc: string;
 }
 
 export const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -143,6 +148,9 @@ export const filterStatement = (row: StatementRow, interval: DateInterval | null
         amount: toNumber(item?.amt ?? item?.amount),
         date,
         category: String(item?.category || item?.desc || item?.name || ""),
+        analysisId: row.id,
+        rawDate: String(item?.date ?? ""),
+        desc: String(item?.desc || item?.name || ""),
       });
       return true;
     });
@@ -201,6 +209,21 @@ export const monthlySeries = (txns: Txn[]) => {
   return Array.from(map.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([key, v]) => ({ key, ...v, net: v.income - v.expenses }));
+};
+
+/** Expense categories with every transaction inside them, largest category first. */
+export const expenseCategoryDetails = (txns: Txn[], isEnglish: boolean) => {
+  const map = new Map<string, { total: number; txns: Txn[] }>();
+  for (const t of txns) {
+    if (t.list === "revenues" || t.amount <= 0) continue;
+    const name = translateCategory(t.category, isEnglish) || t.category || "—";
+    const entry = map.get(name) || { total: 0, txns: [] };
+    entry.total += t.amount;
+    entry.txns.push(t);
+    map.set(name, entry);
+  }
+  map.forEach((entry) => entry.txns.sort((a, b) => b.date.getTime() - a.date.getTime()));
+  return Array.from(map.entries()).sort((a, b) => b[1].total - a[1].total);
 };
 
 /** Expense categories, largest first. */

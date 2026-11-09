@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import {
   AlertTriangle, ArrowLeft, BarChart3, Building2, ChevronRight, CornerDownRight, Crown, Download, Eye,
-  FileSpreadsheet, FileText, Loader2, PieChart as PieChartIcon, Trash2, TrendingDown, TrendingUp, Upload, Wallet,
+  FileSpreadsheet, FileText, Loader2, Pencil, PieChart as PieChartIcon, Trash2, TrendingDown, TrendingUp, Upload, Wallet,
 } from "lucide-react";
 import { useNavGuard } from "@/components/AppLayout";
 import ChatBot from "@/components/ChatBot";
@@ -13,6 +13,8 @@ import PeriodPicker, { fmtMonth, selectionLabel, selectionToInterval, type Perio
 import StatementUploader, { type UploadOutcome } from "@/components/StatementUploader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -23,10 +25,12 @@ import { fetchClientNodes, type ClientNode } from "@/utils/clientTree";
 import { buildConsolidatedReport } from "@/utils/consolidateReport";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
-import { pickText, STR, tr } from "@/utils/i18n";
+import { pickText, STR, tr, translateCategory } from "@/utils/i18n";
+import { REASSIGN_TAXONOMY, type TransactionList } from "@/utils/reportTypes";
+import { moveTransaction } from "@/utils/reassign";
 import { saveReportToStorage } from "@/utils/saveReport";
 import {
-  expenseCategories, filterStatement, monthKey, monthlySeries, totalsOf, type FilteredStatement, type StatementRow,
+  expenseCategoryDetails, filterStatement, monthKey, monthlySeries, totalsOf, type FilteredStatement, type StatementRow, type Txn,
 } from "@/utils/statementPeriod";
 
 const EXPENSE_COLORS = ["hsl(38, 90%, 55%)", "hsl(210, 60%, 50%)", "hsl(0, 70%, 55%)", "hsl(280, 60%, 55%)"];
@@ -51,7 +55,8 @@ const ClientDashboard = () => {
   const { clientId = "" } = useParams();
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, isAdmin, canManageClients, loading: authLoading } = useAuth();
+  const { user, isAdmin, canManageClients, permissions, loading: authLoading } = useAuth();
+  const canDelete = permissions.delete;
   // Everyone who works with a client sees all of its statements; admins and the client's owners
   // also see who uploaded each one (authorized users can't delete).
   const seesWholeCompany = isAdmin || canManageClients;
@@ -131,7 +136,11 @@ const ClientDashboard = () => {
       }),
     [txns, isEnglish]
   );
-  const categories = useMemo(() => expenseCategories(txns, isEnglish).slice(0, 10), [txns, isEnglish]);
+  const categories = useMemo(() => expenseCategoryDetails(txns, isEnglish).slice(0, 10), [txns, isEnglish]);
+  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
+  const [editingTxn, setEditingTxn] = useState<Txn | null>(null);
+  const [targetCategory, setTargetCategory] = useState("");
+  const [savingCategory, setSavingCategory] = useState(false);
   const expenseMix = useMemo(
     () =>
       [
@@ -248,6 +257,35 @@ const ClientDashboard = () => {
       });
     } finally {
       setDownloading(null);
+    }
+  };
+
+  const listLabel = (list: TransactionList) =>
+    tr(list === "revenues" ? STR.revenue : list === "cogs" ? STR.cogsFull : list === "opex" ? STR.operatingExpenses : list === "fees" ? STR.feesFallback : STR.otherExpensesDeductions, isEnglish);
+
+  const confirmCategoryChange = async () => {
+    if (!editingTxn || !targetCategory) return;
+    const sep = targetCategory.indexOf("::");
+    const targetList = targetCategory.slice(0, sep) as TransactionList;
+    const category = targetCategory.slice(sep + 2);
+    const row = rows.find((r) => r.id === editingTxn.analysisId);
+    if (!row) return;
+    setSavingCategory(true);
+    try {
+      const { full, totals: stored } = moveTransaction(
+        row.full_analysis,
+        { list: editingTxn.list as TransactionList, rawDate: editingTxn.rawDate, desc: editingTxn.desc, amount: editingTxn.amount },
+        targetList, category
+      );
+      const { data, error } = await supabase.from("analyses").update({ full_analysis: full, ...stored }).eq("id", row.id).select("id");
+      if (error || !data?.length) throw new Error(error?.message || tr(STR.deleteNotAllowed, isEnglish));
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, full_analysis: full } : r)));
+      setEditingTxn(null);
+      toast({ title: "✅", description: tr(STR.categoryChanged, isEnglish) });
+    } catch (err) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : tr(STR.reassignError, isEnglish), variant: "destructive" });
+    } finally {
+      setSavingCategory(false);
     }
   };
 
@@ -430,18 +468,57 @@ const ClientDashboard = () => {
                 <CardTitle className="text-base">{tr(STR.topExpenseCategoriesTitle, isEnglish)}</CardTitle>
               </CardHeader>
               <CardContent>
+                <p className="text-xs text-muted-foreground mb-3">{tr(STR.showTransactionsHint, isEnglish)}</p>
                 <div className="space-y-2">
-                  {categories.map(([name, amount]) => {
-                    const pct = totals.expenses > 0 ? (amount / totals.expenses) * 100 : 0;
+                  {categories.map(([name, { total, txns: items }]) => {
+                    const pct = totals.expenses > 0 ? (total / totals.expenses) * 100 : 0;
+                    const open = openCategories.has(name);
                     return (
-                      <div key={name} className="space-y-1">
-                        <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="text-foreground truncate">{name}</span>
-                          <span className="text-muted-foreground shrink-0">{fmt(amount)} · {pct.toFixed(1)}%</span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-primary/70" style={{ width: `${Math.min(100, pct)}%` }} />
-                        </div>
+                      <div key={name} className="rounded-lg border border-border/60">
+                        <button
+                          type="button"
+                          onClick={() => setOpenCategories((prev) => { const next = new Set(prev); if (next.has(name)) next.delete(name); else next.add(name); return next; })}
+                          className="w-full text-left px-3 py-2.5 hover:bg-muted/40 transition-colors rounded-lg"
+                        >
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+                              <span className="text-foreground truncate font-medium">{name}</span>
+                              <span className="text-xs text-muted-foreground shrink-0">({items.length} {tr(STR.transactionsInCategory, isEnglish)})</span>
+                            </span>
+                            <span className="text-muted-foreground shrink-0">{fmt(total)} · {pct.toFixed(1)}%</span>
+                          </div>
+                          <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div className="h-full rounded-full bg-primary/70" style={{ width: `${Math.min(100, pct)}%` }} />
+                          </div>
+                        </button>
+                        {open && (
+                          <div className="border-t border-border/60 max-h-80 overflow-y-auto">
+                            <table className="w-full text-sm">
+                              <tbody>
+                                {items.map((t, i) => (
+                                  <tr key={`${t.analysisId}-${i}`} className="border-b border-border/40 last:border-0 hover:bg-muted/30">
+                                    <td className="pl-9 pr-2 py-2 whitespace-nowrap text-muted-foreground w-28">
+                                      {t.date.toLocaleDateString(isEnglish ? "en-US" : "es-CO", { month: "short", day: "numeric", year: "numeric" })}
+                                    </td>
+                                    <td className="px-2 py-2 text-foreground max-w-[320px] truncate" title={t.desc}>{t.desc || "—"}</td>
+                                    <td className="px-2 py-2 text-right whitespace-nowrap text-destructive">{fmt(t.amount)}</td>
+                                    <td className="pr-3 py-2 w-10 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => { setEditingTxn(t); setTargetCategory(""); }}
+                                        title={tr(STR.changeCategoryTitle, isEnglish)}
+                                        className="text-muted-foreground hover:text-primary"
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -458,7 +535,7 @@ const ClientDashboard = () => {
               <FileText className="h-4 w-4 text-primary" />
               {tr(STR.statementsOfCompany, isEnglish)} — {selectionLabel(selection, isEnglish)}
             </CardTitle>
-            {canManageClients && selectedIds.size > 0 && (
+            {canDelete && selectedIds.size > 0 && (
               <Button
                 size="sm" variant="destructive"
                 disabled={deleting}
@@ -478,7 +555,7 @@ const ClientDashboard = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-8">
-                        {canManageClients && (
+                        {canDelete && (
                           <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-[hsl(var(--primary))]" aria-label="select all" />
                         )}
                       </TableHead>
@@ -501,7 +578,7 @@ const ClientDashboard = () => {
                           onClick={() => openStatement(s)}
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
-                            {canManageClients && (
+                            {canDelete && (
                               <input
                                 type="checkbox"
                                 checked={selectedIds.has(s.row.id)}
@@ -532,7 +609,7 @@ const ClientDashboard = () => {
                               <Button size="sm" variant="outline" onClick={() => openStatement(s)}>
                                 <Eye className="h-4 w-4 mr-1" /> {tr(STR.viewWord, isEnglish)}
                               </Button>
-                              {canManageClients && (
+                              {canDelete && (
                                 <Button
                                   size="sm" variant="ghost"
                                   disabled={deleting}
@@ -569,6 +646,45 @@ const ClientDashboard = () => {
           </Button>
         </div>
       </main>
+
+      <Dialog open={!!editingTxn} onOpenChange={(open) => { if (!open && !savingCategory) setEditingTxn(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{tr(STR.changeCategoryTitle, isEnglish)}</DialogTitle>
+            <DialogDescription>{tr(STR.changeCategoryDesc, isEnglish)}</DialogDescription>
+          </DialogHeader>
+          {editingTxn && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+                <p className="font-medium text-foreground truncate">{editingTxn.desc || "—"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {editingTxn.date.toLocaleDateString(isEnglish ? "en-US" : "es-CO", { month: "short", day: "numeric", year: "numeric" })} · {fmt(editingTxn.amount)} · {translateCategory(editingTxn.category, isEnglish)}
+                </p>
+              </div>
+              <Select value={targetCategory} onValueChange={setTargetCategory}>
+                <SelectTrigger><SelectValue placeholder={tr(STR.reassignCategoryLabel, isEnglish)} /></SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {(Object.keys(REASSIGN_TAXONOMY) as TransactionList[]).map((list) => (
+                    <SelectGroup key={list}>
+                      <SelectLabel>{listLabel(list)}</SelectLabel>
+                      {REASSIGN_TAXONOMY[list].map((c) => (
+                        <SelectItem key={`${list}::${c}`} value={`${list}::${c}`}>{translateCategory(c, isEnglish)}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditingTxn(null)} disabled={savingCategory}>{tr(STR.reassignCancel, isEnglish)}</Button>
+            <Button onClick={confirmCategoryChange} disabled={!targetCategory || savingCategory}>
+              {savingCategory && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              {tr(STR.reassignSave, isEnglish)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ChatBot />
     </div>
   );

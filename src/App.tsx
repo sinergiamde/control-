@@ -11,12 +11,15 @@ import Analyze from "./pages/Analyze";
 import Receipts from "./pages/Receipts";
 import Results from "./pages/Results";
 import Admin from "./pages/Admin";
+import AdminHub from "./pages/AdminHub";
+import Permissions from "./pages/Permissions";
 import History from "./pages/History";
 import Clients from "./pages/Clients";
 import ClientDashboard from "./pages/ClientDashboard";
 import GeneralDashboard from "./pages/GeneralDashboard";
 import Passwords from "./pages/Passwords";
 import Settings from "./pages/Settings";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +34,7 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Index />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               {/* Everything behind login shares the sidebar. Home is "Analyze statement" — what people
                   come to CTRL+ for. */}
               <Route element={<AppLayout />}>
@@ -41,7 +45,9 @@ const App = () => (
                 <Route path="/clients/:clientId" element={<ClientDashboard />} />
                 <Route path="/results" element={<Results />} />
                 <Route path="/history" element={<History />} />
-                <Route path="/admin" element={<Admin />} />
+                <Route path="/admin" element={<AdminHub />} />
+                <Route path="/admin/users" element={<Admin />} />
+                <Route path="/admin/permissions" element={<Permissions />} />
                 <Route path="/passwords" element={<Passwords />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>

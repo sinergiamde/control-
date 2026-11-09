@@ -30,7 +30,7 @@ const Navbar = ({ confirmBeforeLeave }: NavbarProps = {}) => {
   };
 
   const displayName = profile?.name || user?.email?.split("@")[0];
-  const isOnAdmin = location.pathname === "/admin";
+  const isOnAdmin = location.pathname.startsWith("/admin");
 
   return (
     <nav className="bg-background/80 backdrop-blur-md border-b border-border px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between sticky top-0 z-50">

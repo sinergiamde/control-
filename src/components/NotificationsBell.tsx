@@ -74,7 +74,7 @@ const NotificationsBell = ({ refreshKey, onNavigate }: { refreshKey: string; onN
   };
 
   const target = (n: NotificationRow) =>
-    n.kind === "new_signup" ? "/admin?filter=pending" : n.kind === "subscription_request" ? "/admin" : n.kind === "clients_assigned" ? "/clients" : null;
+    n.kind === "new_signup" ? "/admin/users?filter=pending" : n.kind === "subscription_request" ? "/admin/users" : n.kind === "clients_assigned" ? "/clients" : null;
 
   const handleClick = (n: NotificationRow) => {
     markRead([n.id]);

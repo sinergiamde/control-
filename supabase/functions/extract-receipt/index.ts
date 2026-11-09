@@ -63,7 +63,7 @@ serve(async (req) => {
     if (authError || !user) {
       return json({ error: "Debes iniciar sesión para leer un recibo." }, 401);
     }
-    const { data: allowed } = await supabaseClient.rpc("can_upload");
+    const { data: allowed } = await supabaseClient.rpc("can_upload_receipt");
     if (allowed === false) {
       return json({ error: "Tu prueba gratuita terminó. Suscríbete para seguir subiendo recibos." }, 402);
     }

@@ -2,13 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Building2, ChevronRight, CornerDownRight, Crown, KeyRound, LayoutDashboard, LogOut, Menu, Moon, Receipt, Settings as SettingsIcon,
-  ShieldCheck, Sparkles, Sun, Users, X,
+  Search, ShieldCheck, Sparkles, Sun, Users, X,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { FlagIcon } from "@/components/FlagIcon";
 import NotificationsBell from "@/components/NotificationsBell";
+import PasswordForm from "@/components/PasswordForm";
 import { TrialBanner, TrialEndedDialog } from "@/components/SubscribePrompt";
 import UserAvatar from "@/components/UserAvatar";
 import { fetchClientNodes, type ClientNode } from "@/utils/clientTree";
@@ -27,10 +28,10 @@ export const useNavGuard = (message: string | undefined) => {
 };
 
 const linkClass = (active: boolean) =>
-  `w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+  `relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
     active
-      ? "bg-sidebar-primary/15 text-sidebar-primary"
-      : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+      ? "bg-sidebar-accent text-sidebar-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-sidebar-primary"
+      : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/70"
   }`;
 
 const SectionLabel = ({ children }: { children: React.ReactNode }) => (
@@ -44,7 +45,7 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
 const AppLayout = () => {
   const { lang, setLang, t } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, profile, role, isAdmin, canManageClients, logout, loading } = useAuth();
+  const { user, profile, role, isAdmin, permissions, logout, loading, refreshProfile } = useAuth();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -95,6 +96,30 @@ const AppLayout = () => {
       return next;
     });
 
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? nodes.filter((n) => n.name.toLowerCase().includes(q)).slice(0, 6) : [];
+  }, [nodes, query]);
+  const pageTitle = (() => {
+    const path = location.pathname;
+    if (path.startsWith("/clients/")) return nodes.find((n) => n.id === activeClientId)?.name || t("clientsNav");
+    const titles: Record<string, string> = {
+      "/analyze": tr(STR.analyzeNav, isEnglish),
+      "/receipts": tr(STR.receiptsTitle, isEnglish),
+      "/dashboard": tr(STR.generalDashboardNav, isEnglish),
+      "/clients": t("clientsNav"),
+      "/results": tr(STR.analyzeTitle, isEnglish),
+      "/history": tr(STR.savedReportsTitle, isEnglish),
+      "/admin": tr(STR.usersAndPermissionsNav, isEnglish),
+      "/admin/users": tr(isAdmin ? STR.hubUsersTitle : STR.authorizedUsersNav, isEnglish),
+      "/admin/permissions": tr(STR.hubRolesTitle, isEnglish),
+      "/passwords": tr(STR.passwordsNav, isEnglish),
+      "/settings": tr(STR.settingsNav, isEnglish),
+    };
+    return titles[path] || "CTRL+";
+  })();
   const displayName = profile?.name || user?.email?.split("@")[0] || t("userFallback");
   const roleLabel = tr(role === "accountant" ? STR.roleAccountant : role === "authorized" ? STR.roleAuthorized : STR.roleUser, isEnglish);
 
@@ -107,12 +132,9 @@ const AppLayout = () => {
             by <span className="text-sidebar-primary/80 font-medium">TaxForYou</span>
           </span>
         </button>
-        <div className="flex items-center gap-1">
-          <NotificationsBell refreshKey={location.pathname} onNavigate={go} />
-          <button type="button" onClick={() => setMobileOpen(false)} className="md:hidden text-sidebar-foreground/60" aria-label="close">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+        <button type="button" onClick={() => setMobileOpen(false)} className="md:hidden text-sidebar-foreground/60" aria-label="close">
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
@@ -120,7 +142,7 @@ const AppLayout = () => {
           <button
             type="button"
             onClick={() => go("/analyze")}
-            className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-bold transition-all bg-sidebar-primary text-sidebar-primary-foreground hover:brightness-110 neon-glow ${
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-bold transition-all bg-sidebar-primary text-sidebar-primary-foreground shadow-sm hover:brightness-110 ${
               location.pathname === "/analyze" ? "ring-2 ring-sidebar-primary/40 ring-offset-2 ring-offset-sidebar" : ""
             }`}
           >
@@ -231,7 +253,7 @@ const AppLayout = () => {
         {isAdmin ? (
           <div className="space-y-1">
             <SectionLabel>{tr(STR.adminSectionLabel, isEnglish)}</SectionLabel>
-            <button type="button" onClick={() => go("/admin")} className={linkClass(location.pathname === "/admin")}>
+            <button type="button" onClick={() => go("/admin")} className={linkClass(location.pathname.startsWith("/admin"))}>
               <ShieldCheck className="h-4 w-4 shrink-0" />
               <span className="truncate">{tr(STR.usersAndPermissionsNav, isEnglish)}</span>
             </button>
@@ -240,10 +262,10 @@ const AppLayout = () => {
               <span className="truncate">{tr(STR.passwordsNav, isEnglish)}</span>
             </button>
           </div>
-        ) : canManageClients && (
+        ) : permissions.designate && (
           <div className="space-y-1">
             <SectionLabel>{tr(STR.adminSectionLabel, isEnglish)}</SectionLabel>
-            <button type="button" onClick={() => go("/admin")} className={linkClass(location.pathname === "/admin")}>
+            <button type="button" onClick={() => go("/admin/users")} className={linkClass(location.pathname.startsWith("/admin"))}>
               <Users className="h-4 w-4 shrink-0" />
               <span className="truncate">{tr(STR.authorizedUsersNav, isEnglish)}</span>
             </button>
@@ -259,66 +281,26 @@ const AppLayout = () => {
         </div>
       </nav>
 
-      <div className="p-3 border-t border-sidebar-border shrink-0 space-y-3">
-        <div className="flex items-center rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-0.5 w-full" role="group" aria-label="Language / Idioma">
-          <button
-            type="button" onClick={() => setLang("en")} aria-pressed={lang === "en"} title="English"
-            className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-all ${
-              lang === "en" ? "bg-sidebar-primary/15 text-sidebar-primary" : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
-            }`}
-          >
-            <FlagIcon country="us" className="w-3.5 h-2.5 rounded-[1px] shrink-0" /> EN
-          </button>
-          <button
-            type="button" onClick={() => setLang("es")} aria-pressed={lang === "es"} title="Español"
-            className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-all ${
-              lang === "es" ? "bg-sidebar-primary/15 text-sidebar-primary" : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
-            }`}
-          >
-            <FlagIcon country="es" className="w-3.5 h-2.5 rounded-[1px] shrink-0" /> ES
-          </button>
-        </div>
+    </aside>
+  );
 
-        <div className="flex items-center rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-0.5 w-full" role="group" aria-label={tr(STR.themeSection, isEnglish)}>
-          {([
-            { value: "light", icon: Sun, label: tr(STR.themeLight, isEnglish) },
-            { value: "dark", icon: Moon, label: tr(STR.themeDark, isEnglish) },
-          ] as const).map((opt) => (
-            <button
-              key={opt.value}
-              type="button" onClick={() => setTheme(opt.value)} aria-pressed={theme === opt.value}
-              className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-all ${
-                theme === opt.value ? "bg-sidebar-primary/15 text-sidebar-primary" : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
-              }`}
-            >
-              <opt.icon className="h-3.5 w-3.5" /> {opt.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 px-1">
-          <button
-            type="button"
-            onClick={() => go("/settings")}
-            className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-md hover:bg-sidebar-accent p-1 -m-1"
-            title={tr(STR.settingsNav, isEnglish)}
-          >
-            <UserAvatar name={displayName} url={profile?.avatar_url} className="w-9 h-9" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-sidebar-foreground/80 truncate">{displayName}</p>
-              <p className="text-[10px] text-sidebar-primary/80">{isAdmin ? `${tr(STR.roleAdmin, isEnglish)} · TaxForYou` : roleLabel}</p>
-            </div>
-          </button>
-          <button
-            type="button" onClick={handleLogout} title={t("logout")}
-            className="text-sidebar-foreground/50 hover:text-destructive transition-colors shrink-0"
-          >
-            <LogOut className="h-4 w-4" />
+  // A provisional password (set by an administrator) must be replaced before anything else.
+  if (profile?.must_change_password) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
+          <div className="text-center space-y-1">
+            <p className="text-xl font-bold text-foreground">{tr(STR.mustChangeTitle, isEnglish)}</p>
+            <p className="text-sm text-muted-foreground">{tr(STR.mustChangeDesc, isEnglish)}</p>
+          </div>
+          <PasswordForm submitLabel={tr(STR.continueButton, isEnglish)} onDone={refreshProfile} />
+          <button type="button" onClick={handleLogout} className="w-full text-xs text-muted-foreground hover:text-foreground">
+            {t("logout")}
           </button>
         </div>
       </div>
-    </aside>
-  );
+    );
+  }
 
   return (
     <NavGuardContext.Provider value={setGuard}>
@@ -333,12 +315,90 @@ const AppLayout = () => {
         )}
 
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="md:hidden h-14 flex items-center gap-3 px-4 border-b border-border sticky top-0 z-40 bg-background/90 backdrop-blur">
-            <button type="button" onClick={() => setMobileOpen(true)} aria-label="menu">
+          <header className="h-14 flex items-center gap-3 px-4 sm:px-6 border-b border-border sticky top-0 z-40 bg-background/90 backdrop-blur">
+            <button type="button" onClick={() => setMobileOpen(true)} aria-label="menu" className="md:hidden">
               <Menu className="h-5 w-5" />
             </button>
-            <span className="text-lg font-black tracking-tight text-primary neon-text">CTRL+</span>
-          </div>
+            <nav className="hidden sm:flex items-center gap-1.5 text-sm min-w-0" aria-label="breadcrumb">
+              <span className="text-muted-foreground">{isAdmin ? "TaxForYou" : "CTRL+"}</span>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+              <span className="font-semibold text-foreground truncate">{pageTitle}</span>
+            </nav>
+            <div className="relative flex-1 max-w-md ml-auto hidden md:block">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onFocus={() => setSearchOpen(true)}
+                onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)}
+                placeholder={t("searchClientsPlaceholder")}
+                className="w-full h-9 rounded-lg border border-border bg-card pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+              />
+              {searchOpen && query.trim() && (
+                <div className="absolute left-0 right-0 top-11 rounded-lg border border-border bg-popover shadow-lg overflow-hidden">
+                  {matches.length === 0 ? (
+                    <p className="px-3 py-2.5 text-sm text-muted-foreground">{t("noClientsYet")}</p>
+                  ) : (
+                    matches.map((n) => (
+                      <button
+                        key={n.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setQuery(""); setSearchOpen(false); go(`/clients/${n.id}`); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted"
+                      >
+                        <Building2 className="h-4 w-4 text-primary shrink-0" />
+                        <span className="truncate">{n.name}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0 max-md:ml-auto">
+              <div className="flex items-center rounded-lg border border-border bg-card p-0.5" role="group" aria-label="Language / Idioma">
+                {([["en", "us", "EN"], ["es", "es", "ES"]] as const).map(([code, flag, label]) => (
+                  <button
+                    key={code}
+                    type="button" onClick={() => setLang(code)} aria-pressed={lang === code}
+                    title={code === "en" ? "English" : "Español"}
+                    className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+                      lang === code ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <FlagIcon country={flag} className="w-3.5 h-2.5 rounded-[1px] shrink-0" /> {label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+                title={tr(theme === "light" ? STR.themeDark : STR.themeLight, isEnglish)}
+                aria-label={tr(STR.themeSection, isEnglish)}
+                className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+              </button>
+              <NotificationsBell refreshKey={location.pathname} onNavigate={go} />
+              <button
+                type="button" onClick={() => go("/settings")} title={tr(STR.settingsNav, isEnglish)}
+                className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-muted min-w-0"
+              >
+                <UserAvatar name={displayName} url={profile?.avatar_url} className="w-8 h-8" />
+                <span className="hidden lg:block text-left min-w-0">
+                  <span className="block text-sm text-foreground truncate max-w-[200px] leading-tight">{user?.email}</span>
+                  <span className="block text-[10px] text-primary leading-tight">{isAdmin ? `${tr(STR.roleAdmin, isEnglish)} · TaxForYou` : roleLabel}</span>
+                </span>
+              </button>
+              <button
+                type="button" onClick={handleLogout}
+                className="h-9 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">{t("logout")}</span>
+              </button>
+            </div>
+          </header>
           <TrialBanner />
           <Outlet />
           <TrialEndedDialog />

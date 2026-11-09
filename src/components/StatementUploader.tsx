@@ -103,7 +103,7 @@ interface StatementUploaderProps {
 const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClient = false, title, onClientCreated }: StatementUploaderProps) => {
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, session, canManageClients } = useAuth();
+  const { user, session, canManageClients, permissions } = useAuth();
   const { toast } = useToast();
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -311,6 +311,9 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasPendingFiles, onPendingChange]);
 
+  if (!permissions.analyze) {
+    return <Card className="bg-card"><CardContent className="p-6 text-center text-sm text-muted-foreground">{tr(STR.noPermissionHere, isEnglish)}</CardContent></Card>;
+  }
   if (uploadsLocked) return <UploadLockedCard />;
 
   const clientReady = targetId === NEW_CLIENT ? !!newClientName.trim() : !!targetId;

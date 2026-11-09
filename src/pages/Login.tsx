@@ -10,6 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { sendPasswordRecovery } from "@/utils/recovery";
+import { STR, tr } from "@/utils/i18n";
 
 const countriesData = [
   { name: "United States", flag: "🇺🇸", code: "+1" },
@@ -42,13 +45,34 @@ const countriesData = [
 ];
 
 const Login = () => {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const isEnglish = lang === "en";
   const { login, register } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isRegister, setIsRegister] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSending, setForgotSending] = useState(false);
+
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/\S+@\S+\.\S+/.test(forgotEmail)) {
+      toast({ title: "Error", description: t("email") + " ✖", variant: "destructive" });
+      return;
+    }
+    setForgotSending(true);
+    const error = await sendPasswordRecovery(forgotEmail);
+    setForgotSending(false);
+    if (error) {
+      toast({ title: "Error", description: error, variant: "destructive" });
+      return;
+    }
+    setForgotOpen(false);
+    toast({ title: "📧", description: tr(STR.forgotSent, isEnglish), className: "border-primary text-primary" });
+  };
   const [form, setForm] = useState({
     name: "", email: "", phone: "", country: "", password: "", confirmPassword: "",
   });
@@ -198,6 +222,14 @@ const Login = () => {
                   </button>
                 </div>
                 {renderError("password")}
+                {!isRegister && (
+                  <div className="text-right">
+                    <button type="button" onClick={() => { setForgotEmail(form.email); setForgotOpen(true); }}
+                      className="text-xs text-primary font-medium hover:underline">
+                      {tr(STR.forgotPassword, isEnglish)}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {isRegister && (
@@ -230,6 +262,24 @@ const Login = () => {
           </CardContent>
         </Card>
       </div>
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{tr(STR.forgotTitle, isEnglish)}</DialogTitle>
+            <DialogDescription>{tr(STR.forgotDesc, isEnglish)}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleForgot} className="space-y-3">
+            <Input type="email" autoFocus value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="nombre@correo.com" />
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setForgotOpen(false)}>{t("cancelWord")}</Button>
+              <Button type="submit" disabled={forgotSending || !forgotEmail.trim()}>
+                {forgotSending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                {tr(STR.sendLinkButton, isEnglish)}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

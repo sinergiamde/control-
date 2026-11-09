@@ -94,7 +94,7 @@ export type TransactionList = "revenues" | "cogs" | "opex" | "fees" | "personal"
  * transaction always lands in a category the rest of the report (Excel/PDF/consolidation) already
  * knows how to translate and total correctly. */
 export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
-  revenues: ["Bank transfer", "Wire transfer", "Zelle", "Check", "Cash deposit", "Other income (specify)"],
+  revenues: ["Bank transfer", "Wire transfer", "Zelle", "Check", "Cash deposit", "Refunds and returns", "Other income (specify)"],
   cogs: [
     "Materials", "Supplies", "Storage", "Startup and moving costs", "Subcontractor costs",
     "Tolls (work)", "Permits",
@@ -141,6 +141,13 @@ const transactionSignature = (item: any): string => {
   return `${date}|${amt.toFixed(2)}|${desc}`;
 };
 
+/** A deposit that is the bank handing money back for an earlier purchase (a refund, return or
+ * reversal). It is income — the money returned to the account — never an expense. Fees for returned
+ * checks/items are real expenses, so those are excluded. */
+const REFUND_PATTERN = /(debit card return|purchase return|merchant (credit|return)|\brefund(ed)?\b|\breversal\b|credit adjustment|reembolso|devoluci[oó]n)/i;
+const NOT_REFUND_PATTERN = /(fee|returned (check|item)|\bnsf\b|insufficient)/i;
+export const REFUND_CATEGORY = "Refunds and returns";
+
 /** Cleans up one statement's raw AI output before anything totals, stores, or renders it:
  *  1) De-duplicates transactions the AI accidentally classified into two different lists (same
  *     date + amount + description) — keeps the first occurrence, drops the rest, so the same
@@ -159,7 +166,10 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
   const notesEs: string[] = [];
   if (!source || typeof source !== "object") return { notesEn, notesEs };
 
-  const seen = new Set<string>();
+  // Only a transaction that shows up in TWO DIFFERENT categories is a duplicate. Identical lines
+  // inside one category (two $5.00 coffees the same day, two same-amount checks) are real and stay:
+  // the report must show exactly what the bank statement shows.
+  const seen = new Map<string, TransactionList>();
   for (const list of TRANSACTION_LISTS) {
     if (!Array.isArray(source[list])) continue;
     const kept: any[] = [];
@@ -168,12 +178,13 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
       const amt = looseNumber(item?.amt ?? item?.amount);
       const isBlank = !desc && amt === 0;
       const sig = transactionSignature(item);
-      if (!isBlank && seen.has(sig)) {
+      const owner = seen.get(sig);
+      if (!isBlank && owner !== undefined && owner !== list) {
         notesEn.push(`Removed a duplicate transaction found in more than one category: "${desc || "?"}" (${item?.date || "?"}, $${amt.toFixed(2)}) — kept only the first occurrence.`);
         notesEs.push(`Se eliminó una transacción duplicada encontrada en más de una categoría: "${desc || "?"}" (${item?.date || "?"}, $${amt.toFixed(2)}) — se conservó solo la primera aparición.`);
         continue;
       }
-      if (!isBlank) seen.add(sig);
+      if (!isBlank && owner === undefined) seen.set(sig, list);
       kept.push(item);
     }
     source[list] = kept;
@@ -182,6 +193,15 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
   const rebucketed: Record<TransactionList, any[]> = { revenues: [], cogs: [], opex: [], fees: [], personal: [] };
   for (const list of TRANSACTION_LISTS) {
     for (const item of Array.isArray(source[list]) ? source[list] : []) {
+      // Safety net for refunds the AI left among the expenses (unless a person moved it there on purpose).
+      const text = String(item?.desc || item?.name || "");
+      if (list !== "revenues" && !item?.manual && REFUND_PATTERN.test(text) && !NOT_REFUND_PATTERN.test(text)) {
+        item.category = REFUND_CATEGORY;
+        rebucketed.revenues.push(item);
+        notesEn.push(`"${text}" is a refund/return — the money came back to the account, so it is reported as income, not an expense.`);
+        notesEs.push(`"${text}" es una devolución/reembolso — el dinero regresó a la cuenta, por eso se reporta como ingreso y no como gasto.`);
+        continue;
+      }
       const canonical = item?.category ? CANONICAL_LIST_BY_CATEGORY[item.category] : undefined;
       if (canonical && canonical !== list) {
         rebucketed[canonical].push(item);

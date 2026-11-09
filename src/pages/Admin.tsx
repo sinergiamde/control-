@@ -46,7 +46,8 @@ const generatePassword = () => {
 const Admin = () => {
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, isAdmin, canManageClients, loading: authLoading } = useAuth();
+  const { user, isAdmin, permissions, loading: authLoading } = useAuth();
+  const canManageClients = isAdmin || permissions.designate;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();

@@ -25,6 +25,7 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 - "Zelle"
 - "Check"
 - "Cash deposit"
+- "Refunds and returns"
 - "Other income (specify)"
 
 === COGS (costo de ventas) — category debe ser una de: ===
@@ -87,11 +88,13 @@ REGLA DE TRANSFERENCIAS ENTRANTES Y AVANCES DE LÍNEA DE CRÉDITO (importante, N
 
 REGLA DE TARJETA DE CRÉDITO Y PRÉSTAMOS DE NEGOCIO (importante): un pago SALIENTE que sea (a) el pago del saldo/mínimo de una tarjeta de crédito (ej. "Credit Card Pmt", "Online Credit Card Pmt", "Payment to ****XXXX" ligado a un emisor de tarjeta) → OPEX con category "Credit card payment"; o (b) el pago de una cuota de un préstamo/línea de crédito de negocio, incluyendo pagos a una línea de crédito rotativa (ej. "Credit Line Pmt", "Loan Payment", "Business Loan Pmt", "SBA Loan") → OPEX con category "Business loan". No los confundas con un AVANCE/desembolso de línea de crédito (ese es un depósito y sigue la regla de arriba, nunca es gasto); esto aplica solo a PAGOS salientes que reducen la deuda.
 
-REGLA DE DEVOLUCIONES Y REEMBOLSOS (importante, NUNCA la saltes): un DEPÓSITO/crédito que sea la devolución, reembolso o reverso de un gasto de negocio que ya se había hecho (ej. "DEBIT CARD RETURN", "REFUND", "CREDIT ADJUSTMENT", "REVERSAL", casi siempre ligado al nombre de un proveedor/comercio) es dinero que vuelve a entrar a la cuenta, no un gasto — NUNCA lo clasifiques como gasto (ni PERSONAL, ni OPEX, ni COGS, ni FEES), eso invertiría la dirección real del dinero y haría que el resultado neto se vea peor de lo que realmente es. Clasifícalo en REVENUES con category "Other income (specify)", y en "detail_en"/"detail_es" aclara que es una devolución/reembolso de un gasto anterior y no un pago de cliente nuevo (ej. detail_en="Refund from [proveedor], not new revenue" / detail_es="Reembolso de [proveedor], no es ingreso nuevo").
+REGLA DE DEVOLUCIONES Y REEMBOLSOS (importante, NUNCA la saltes): un DEPÓSITO/crédito que sea la devolución, reembolso o reverso de un gasto de negocio que ya se había hecho (ej. "DEBIT CARD RETURN", "REFUND", "CREDIT ADJUSTMENT", "REVERSAL", casi siempre ligado al nombre de un proveedor/comercio) es dinero que vuelve a entrar a la cuenta, no un gasto — NUNCA lo clasifiques como gasto (ni PERSONAL, ni OPEX, ni COGS, ni FEES), eso invertiría la dirección real del dinero y haría que el resultado neto se vea peor de lo que realmente es. Clasifícalo en REVENUES con category "Refunds and returns" (el dinero regresó a la cuenta, por eso es ingreso y nunca gasto), sin importar el proveedor; también aplica a "PURCHASE RETURN", "MERCHANT CREDIT", "REVERSAL", "CREDIT ADJUSTMENT", "REFUND" y a "devolución"/"reembolso". (Un cargo por cheque devuelto o por fondos insuficientes SÍ es gasto bancario: eso no es una devolución.) En "detail_en"/"detail_es" aclara que es una devolución/reembolso de un gasto anterior y no un pago de cliente nuevo (ej. detail_en="Refund from [proveedor], not new revenue" / detail_es="Reembolso de [proveedor], no es ingreso nuevo").
 
 Si algo no está claro, clasifícalo de todas formas en la categoría más probable (sin agregar una alerta individual por eso — las alertas se generan aparte, en el Paso 5, solo para patrones que de verdad importan).
 
 Pagos por Zelle deben listarse individualmente (uno por transacción), nunca agrupados en las tablas de revenues/cogs/opex/fees/personal — pero en "alerts" sí deben agruparse por patrón (ver Paso 5).
+
+FIDELIDAD AL EXTRACTO (obligatorio): el reporte debe reflejar EXACTAMENTE lo que dice el extracto del banco. Cada línea del extracto aparece UNA SOLA VEZ en UNA SOLA categoría: nunca repitas una transacción en dos listas ni la dividas. Si el extracto muestra dos transacciones idénticas (misma fecha, monto y comercio), son dos transacciones reales: inclúyelas las dos. Copia fecha, descripción y monto exactamente como aparecen, sin redondear ni corregir.
 
 IMPORTANTE — NO OMITAS NINGUNA TRANSACCIÓN: procesa absolutamente todas las líneas del extracto, incluyendo transferencias electrónicas banco-a-banco ("Online Transfer", "Electronic Withdrawal", transferencias a otra cuenta propia, etc.) — estas van en PERSONAL con category "Personal bank transfer" si no tienen justificación de negocio clara. Nunca dejes una transacción sin clasificar ni la excluyas del JSON final.
 
@@ -119,6 +122,16 @@ PASO 7 — Busca en el extracto un recuadro de resumen impreso por el propio ban
   - Si el recuadro existe: "found"=true, y llena cada campo presente con el número exacto impreso.
   - Si un campo específico no aparece impreso por separado (ej. el banco no distingue "Retiros electrónicos" de otros retiros — usa "otherWithdrawals" para retiros que no encajen en las demás categorías del resumen del banco): usa -1 tanto en "instances" como en "amount" de ese campo — NUNCA uses 0, porque 0 significaría que el banco reportó cero.
   - Si el extracto no trae ningún recuadro de resumen del banco: "found"=false y usa -1 en TODOS los campos numéricos de "bankSummary".
+
+PASO 8 — Genera "accountInfo" con los datos de la CUENTA tal como los imprime el banco en el encabezado o en la primera página del extracto. Cópialos EXACTOS, nunca los calcules ni los infieras:
+  - "bankName": nombre del banco (ej. "Chase", "Bank of America"). "" si no aparece.
+  - "accountHolder": nombre del titular de la cuenta tal como aparece. "" si no aparece.
+  - "accountType": tipo de cuenta tal como aparece (ej. "Chase Total Business Checking"). "" si no aparece.
+  - "accountNumberLast4": SOLO los últimos 4 dígitos del número de cuenta (nunca el número completo). "" si no aparecen.
+  - "periodStart" y "periodEnd": fechas de inicio y fin del período del extracto en formato MM/DD/YYYY. "" si no aparecen.
+  - "beginningBalance": el saldo inicial / saldo anterior impreso por el banco ("Beginning Balance", "Previous Balance", "Opening Balance", "Saldo anterior", "Saldo inicial"). Puede ser negativo si la cuenta está sobregirada. Usa -999999999 (y no 0) si NO está impreso — 0 significaría que el banco reportó saldo cero.
+  - "endingBalance": el saldo final impreso por el banco ("Ending Balance", "Saldo final"). Mismo criterio: -999999999 si no está impreso.
+  Estos datos son independientes de "bankSummary": busca el saldo anterior en cualquier parte del extracto aunque no exista un recuadro de resumen.
 
 REGLAS OBLIGATORIAS:
 - No inventes transacciones que no estén en el documento.
@@ -224,9 +237,29 @@ const bankSummarySchema = {
 // sent to the model enough to hit Claude's "compiled grammar is too large" limit for structured
 // outputs — so every field that reuses a schema points at a single $defs entry via $ref instead of
 // embedding a fresh copy each time.
+const accountInfoSchema = {
+  type: "object",
+  properties: {
+    bankName: { type: "string" },
+    accountHolder: { type: "string" },
+    accountType: { type: "string" },
+    accountNumberLast4: { type: "string" },
+    periodStart: { type: "string" },
+    periodEnd: { type: "string" },
+    beginningBalance: { type: "number" },
+    endingBalance: { type: "number" },
+  },
+  required: [
+    "bankName", "accountHolder", "accountType", "accountNumberLast4",
+    "periodStart", "periodEnd", "beginningBalance", "endingBalance",
+  ],
+  additionalProperties: false,
+};
+
 const RESULT_SCHEMA = {
   type: "object",
   $defs: {
+    accountInfo: accountInfoSchema,
     lineItem: lineItemSchema,
     thirdPartyPayment: thirdPartyPaymentSchema,
     bankSummaryField: bankSummaryFieldSchema,
@@ -247,6 +280,7 @@ const RESULT_SCHEMA = {
     personal: { type: "array", items: { $ref: "#/$defs/lineItem" } },
     thirdPartyPayments: { type: "array", items: { $ref: "#/$defs/thirdPartyPayment" } },
     bankSummary: { $ref: "#/$defs/bankSummary" },
+    accountInfo: { $ref: "#/$defs/accountInfo" },
     insights_en: { type: "array", items: { type: "string" } },
     insights_es: { type: "array", items: { type: "string" } },
     alerts_en: { type: "array", items: { type: "string" } },
@@ -255,7 +289,7 @@ const RESULT_SCHEMA = {
   },
   required: [
     "company", "period", "period_en", "period_es", "industry", "annualYear",
-    "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments", "bankSummary",
+    "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments", "bankSummary", "accountInfo",
     "insights_en", "insights_es", "alerts_en", "alerts_es", "annualSummary",
   ],
   additionalProperties: false,
@@ -301,7 +335,7 @@ serve(async (req) => {
     }
     // Once the 24-hour trial is over (and no subscription), stop before spending on the AI — saving
     // the result would be refused by the database anyway.
-    const { data: allowed } = await supabaseClient.rpc("can_upload");
+    const { data: allowed } = await supabaseClient.rpc("can_analyze");
     if (allowed === false) {
       return new Response(JSON.stringify({ error: "Tu prueba gratuita terminó. Suscríbete para seguir analizando extractos." }), {
         status: 402,

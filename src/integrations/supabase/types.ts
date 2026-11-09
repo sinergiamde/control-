@@ -132,6 +132,9 @@ export type Database = {
       }
       clients: {
         Row: {
+          company: string | null
+          email: string | null
+          phone: string | null
           created_at: string
           created_by: string | null
           id: string
@@ -224,6 +227,7 @@ export type Database = {
           created_at: string
           designated_by: string | null
           id: string
+          must_change_password: boolean
           name: string
           phone: string | null
           reviewed_at: string | null
@@ -300,6 +304,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_permissions: {
+        Row: {
+          granted: boolean
+          permission: string
+          updated_at: string
+          updated_by: string | null
+          user_id: string
+        }
+        Insert: {
+          granted: boolean
+          permission: string
+          updated_at?: string
+          updated_by?: string | null
+          user_id: string
+        }
+        Update: {
+          granted?: boolean
+          permission?: string
+          updated_at?: string
+          updated_by?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -478,8 +506,16 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
+      can_analyze: { Args: never; Returns: boolean }
+      clear_must_change_password: { Args: never; Returns: undefined }
+      can_upload_receipt: { Args: never; Returns: boolean }
+      my_permissions: { Args: never; Returns: Json }
+      admin_set_permission: {
+        Args: { _user_id: string; _perm: string; _granted: boolean }
+        Returns: undefined
+      }
       create_client: {
-        Args: { _name: string }
+        Args: { _name: string; _company?: string | null; _email?: string | null; _phone?: string | null }
         Returns: string
       }
       request_subscription: {

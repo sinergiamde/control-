@@ -6,10 +6,10 @@
 
 @layer base {
   :root {
-    --background: 0 0% 1%;
+    --background: 0 0% 6%;
     --foreground: 0 0% 100%;
 
-    --card: 0 0% 10%;
+    --card: 0 0% 9.5%;
     --card-foreground: 0 0% 100%;
 
     --popover: 0 0% 10%;
@@ -30,13 +30,13 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 18%;
+    --border: 0 0% 16%;
     --input: 0 0% 18%;
     --ring: 96 100% 50%;
 
-    --radius: 0.75rem;
+    --radius: 0.625rem;
 
-    --sidebar-background: 0 0% 5%;
+    --sidebar-background: 0 0% 8%;
     --sidebar-foreground: 0 0% 90%;
     --sidebar-primary: 96 100% 50%;
     --sidebar-primary-foreground: 0 0% 0%;
@@ -59,7 +59,7 @@
      stays readable as text on white (the neon green is only legible on black). Toggled from the
      sidebar / Settings via ThemeContext. */
   :root.light {
-    --background: 0 0% 98%;
+    --background: 220 14% 96%;
     --foreground: 0 0% 7%;
 
     --card: 0 0% 100%;
@@ -74,7 +74,7 @@
     --secondary: 150 40% 90%;
     --secondary-foreground: 150 48% 15%;
 
-    --muted: 0 0% 94%;
+    --muted: 220 14% 95%;
     --muted-foreground: 0 0% 38%;
 
     --accent: 0 0% 94%;
@@ -83,17 +83,17 @@
     --destructive: 0 72% 48%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 87%;
-    --input: 0 0% 87%;
+    --border: 220 13% 90%;
+    --input: 220 13% 88%;
     --ring: 100 85% 28%;
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 0 0% 15%;
     --sidebar-primary: 100 85% 28%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 95%;
+    --sidebar-accent: 220 14% 95%;
     --sidebar-accent-foreground: 0 0% 7%;
-    --sidebar-border: 0 0% 90%;
+    --sidebar-border: 220 13% 91%;
     --sidebar-ring: 100 85% 28%;
 
     --neon: 100 85% 28%;
@@ -119,19 +119,19 @@
   }
 
   .neon-glow {
-    box-shadow: 0 0 15px hsl(96 100% 50% / 0.3), 0 0 30px hsl(96 100% 50% / 0.15);
+    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.12);
   }
 
   .neon-glow-hover:hover {
-    box-shadow: 0 0 20px hsl(96 100% 50% / 0.5), 0 0 40px hsl(96 100% 50% / 0.25);
+    filter: brightness(1.06);
   }
 
   .neon-border {
-    @apply border border-primary/30;
+    @apply border border-border shadow-sm;
   }
 
   .neon-text {
-    text-shadow: 0 0 10px hsl(96 100% 50% / 0.5);
+    text-shadow: none;
   }
 
   .stagger-1 { animation-delay: 0.1s; }
@@ -145,8 +145,8 @@
     @apply transition-all duration-300;
   }
   .hover-lift:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 25px hsl(0 0% 0% / 0.3), 0 0 15px hsl(96 100% 50% / 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px hsl(0 0% 0% / 0.10);
   }
 
   .hover-scale {
@@ -179,10 +179,9 @@
     inset: -1px;
     border-radius: inherit;
     border: 1px solid hsl(96 100% 50% / 0.3);
-    animation: pulse-border 3s ease-in-out infinite;
   }
 
-  @keyframes pulse-border {
+  @keyframes pulse-border-unused {
     0%, 100% { border-color: hsl(96 100% 50% / 0.2); }
     50% { border-color: hsl(96 100% 50% / 0.6); }
   }
@@ -213,4 +212,10 @@
   .gradient-hero {
     background: linear-gradient(135deg, hsl(0 0% 2%) 0%, hsl(0 0% 6%) 50%, hsl(150 20% 8%) 100%);
   }
+}
+
+/* ERP look: compact data tables with small uppercase headers, like the reference design. */
+@layer base {
+  th { @apply text-[11px] font-semibold uppercase tracking-wide text-muted-foreground; }
+  thead tr { @apply bg-muted/50; }
 }

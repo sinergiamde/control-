@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User as SupabaseUser, Session } from "@supabase/supabase-js";
 
@@ -15,7 +15,24 @@ interface Profile {
   trial_ends_at: string | null;
   /** Marked by a TaxForYou admin once the person pays. */
   subscribed: boolean;
+  /** An administrator set a provisional password: the person must choose their own first. */
+  must_change_password: boolean;
 }
+
+/** What the signed-in person may do. Starts from the role's defaults and applies the switches a
+ * TaxForYou admin changed for this person (the database enforces the same rules). */
+export interface Permissions {
+  analyze: boolean;
+  receipts: boolean;
+  clients: boolean;
+  delete: boolean;
+  designate: boolean;
+}
+
+const roleDefaults = (role: AppRole): Permissions =>
+  role === "authorized"
+    ? { analyze: true, receipts: true, clients: false, delete: false, designate: false }
+    : { analyze: true, receipts: true, clients: true, delete: true, designate: true };
 
 interface AuthContextType {
   user: SupabaseUser | null;
@@ -24,8 +41,8 @@ interface AuthContextType {
   role: AppRole;
   /** TaxForYou administrator: sees and manages everything. */
   isAdmin: boolean;
-  /** Users and accountants own their clients: create, rename and delete them, and designate
-   * authorized users. Authorized users only work inside the clients shared with them. */
+  permissions: Permissions;
+  /** May create and rename clients. */
   canManageClients: boolean;
   /** Whether uploading statements / receipts is allowed right now (trial or subscription; the
    * database enforces the same rule). */
@@ -48,6 +65,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<AppRole>("user");
   const [canUpload, setCanUpload] = useState(true);
+  const [permissions, setPermissions] = useState<Permissions>(roleDefaults("user"));
+  const permsLoaded = useRef(false);
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
@@ -57,7 +76,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .eq("user_id", userId)
       .single();
     if (data) {
-      setProfile(data);
+      setProfile({ ...data, must_change_password: false });
     } else if (error) {
       // A database that doesn't have the newer columns yet must not cost the user their whole profile.
       const { data: basic } = await supabase
@@ -65,22 +84,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .select("name, phone, country")
         .eq("user_id", userId)
         .single();
-      if (basic) setProfile({ ...basic, avatar_url: null, trial_ends_at: null, subscribed: false });
+      if (basic) setProfile({ ...basic, avatar_url: null, trial_ends_at: null, subscribed: false, must_change_password: false });
     }
+    // Read apart so a database without this column doesn't cost the whole profile.
+    const { data: flag } = await supabase.from("profiles").select("must_change_password").eq("user_id", userId).maybeSingle();
+    if (flag) setProfile((prev) => (prev ? { ...prev, must_change_password: !!(flag as { must_change_password: boolean }).must_change_password } : prev));
     const { data: allowed, error: planError } = await supabase.rpc("can_upload");
     setCanUpload(planError ? true : allowed !== false);
+    const { data: perms, error: permsError } = await supabase.rpc("my_permissions");
+    if (!permsError && perms && typeof perms === "object" && !Array.isArray(perms)) {
+      permsLoaded.current = true;
+      const p = perms as Record<string, boolean>;
+      setPermissions({
+        analyze: p.analyze !== false, receipts: p.receipts !== false, clients: p.clients !== false,
+        delete: p.delete !== false, designate: p.designate !== false,
+      });
+    }
   };
 
   const checkRole = async (userId: string) => {
     const { data } = await supabase.from("user_roles").select("role").eq("user_id", userId);
     const roles = new Set((data || []).map((r) => r.role as string));
-    setRole(ROLE_PRIORITY.find((r) => roles.has(r)) ?? "user");
+    const next = ROLE_PRIORITY.find((r) => roles.has(r)) ?? "user";
+    setRole(next);
+    // Until the exact permissions arrive (or on a database without them), use the role's defaults.
+    if (!permsLoaded.current) setPermissions(roleDefaults(next));
   };
 
   const resetAccount = () => {
     setProfile(null);
     setRole("user");
     setCanUpload(true);
+    setPermissions(roleDefaults("user"));
+    permsLoaded.current = false;
   };
 
   useEffect(() => {
@@ -145,7 +181,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     <AuthContext.Provider
       value={{
         user, session, profile, role, isAdmin,
-        canManageClients: role !== "authorized",
+        permissions: isAdmin ? { analyze: true, receipts: true, clients: true, delete: true, designate: true } : permissions,
+        canManageClients: isAdmin || permissions.clients,
         canUpload: isAdmin || canUpload,
         loading, login, register, logout, refreshProfile,
       }}

@@ -575,6 +575,11 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
   };
 };
 
+const results0Bank = (source: any, key: "beginningBalance" | "endingBalance"): number | null => {
+  const bank = normalizeBankSummary(source?.bankSummary);
+  return bank.found ? bank[key] : null;
+};
+
 const Results = () => {
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
@@ -628,6 +633,29 @@ const Results = () => {
     );
   }
 
+  // Account details as read from the statement header (new analyses), falling back to the bank's
+  // printed summary box for the balances (older ones).
+  const acctSource = rawResults?.analysis ?? rawResults;
+  const acctRaw = acctSource?.accountInfo ?? {};
+  const validBalance = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n > -999999990 ? n : null);
+  const account = (() => {
+    const beginning = validBalance(acctRaw.beginningBalance) ?? results0Bank(acctSource, "beginningBalance");
+    const ending = validBalance(acctRaw.endingBalance) ?? results0Bank(acctSource, "endingBalance");
+    const info = {
+      bankName: String(acctRaw.bankName || ""),
+      accountHolder: String(acctRaw.accountHolder || acctSource?.company || ""),
+      accountType: String(acctRaw.accountType || ""),
+      last4: String(acctRaw.accountNumberLast4 || ""),
+      periodStart: String(acctRaw.periodStart || ""),
+      periodEnd: String(acctRaw.periodEnd || ""),
+    };
+    return {
+      ...info, beginning, ending,
+      hasAnyMissing: beginning === null || ending === null || !info.bankName || !info.last4,
+    };
+  })();
+  const fmtBalance = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+
   const receiptByKey = new Map(receipts.map((r) => [receiptTxnKey(r), r]));
   const receiptWord = tr(STR.receiptWord, isEnglish);
   const baseResults: ResultsData = transformAPIResponse(rawResults, isEnglish);
@@ -674,6 +702,7 @@ const Results = () => {
       const [movedItem] = fromArr.splice(reassignItem.sourceIndex, 1);
       if (!movedItem) throw new Error("Transaction not found");
       movedItem.category = targetCategory;
+      movedItem.manual = true;
       if (!Array.isArray(source[targetList])) source[targetList] = [];
       source[targetList].push(movedItem);
 
@@ -780,31 +809,50 @@ const Results = () => {
           </div>
         </div>
 
-        {results.bankSummary?.found && results.bankSummary.beginningBalance !== null && results.bankSummary.endingBalance !== null && (
-          <Card className="neon-border bg-card shadow-xl mb-6 opacity-0 animate-fade-in" style={{ animationDelay: "0.25s" }}>
-            <CardContent className="p-4">
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <p className="text-xs text-muted-foreground">{tr(STR.beginningBalance, isEnglish)}</p>
-                  <p className="text-lg font-bold text-foreground">${results.bankSummary.beginningBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{tr(STR.netIncomeShort, isEnglish)}</p>
-                  <p className={`text-lg font-bold ${results.netIncome >= 0 ? "text-primary" : "text-destructive"}`}>
-                    {results.netIncome >= 0 ? "+" : ""}${results.netIncome.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+        {/* Account details exactly as the bank prints them, plus the opening and closing balance. A value the
+            statement didn't show is marked "not read" instead of being hidden or guessed. */}
+        <Card className="neon-border bg-card mb-6 opacity-0 animate-fade-in" style={{ animationDelay: "0.25s" }}>
+          <CardContent className="p-4 space-y-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { label: tr(STR.bankLabel, isEnglish), value: account.bankName },
+                { label: tr(STR.accountHolderLabel, isEnglish), value: account.accountHolder },
+                { label: tr(STR.accountLabel, isEnglish), value: [account.accountType, account.last4 ? `•••• ${account.last4}` : ""].filter(Boolean).join(" · ") },
+                { label: tr(STR.statementPeriodLabel, isEnglish), value: [account.periodStart, account.periodEnd].filter(Boolean).join(" – ") },
+              ].map((f) => (
+                <div key={f.label} className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{f.label}</p>
+                  <p className={`text-sm font-semibold truncate ${f.value ? "text-foreground" : "text-muted-foreground/60 font-normal"}`} title={f.value}>
+                    {f.value || tr(STR.notReadFromStatement, isEnglish)}
                   </p>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{tr(STR.endingBalance, isEnglish)}</p>
-                  <p className="text-lg font-bold text-foreground">${results.bankSummary.endingBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
-                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center border-t border-border pt-4">
+              <div>
+                <p className="text-xs text-muted-foreground">{tr(STR.beginningBalance, isEnglish)}</p>
+                <p className={`text-lg font-bold ${account.beginning === null ? "text-muted-foreground/60 text-sm font-normal" : "text-foreground"}`}>
+                  {account.beginning === null ? tr(STR.notReadFromStatement, isEnglish) : fmtBalance(account.beginning)}
+                </p>
               </div>
-              <p className="text-[11px] text-muted-foreground text-center mt-3">
-                {tr(STR.balanceVsNetIncomeNote, isEnglish)}
-              </p>
-            </CardContent>
-          </Card>
-        )}
+              <div>
+                <p className="text-xs text-muted-foreground">{tr(STR.netIncomeShort, isEnglish)}</p>
+                <p className={`text-lg font-bold ${results.netIncome >= 0 ? "text-primary" : "text-destructive"}`}>
+                  {results.netIncome >= 0 ? "+" : ""}${results.netIncome.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{tr(STR.endingBalance, isEnglish)}</p>
+                <p className={`text-lg font-bold ${account.ending === null ? "text-muted-foreground/60 text-sm font-normal" : "text-foreground"}`}>
+                  {account.ending === null ? tr(STR.notReadFromStatement, isEnglish) : fmtBalance(account.ending)}
+                </p>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground text-center">
+              {account.hasAnyMissing ? tr(STR.accountMissingNote, isEnglish) : tr(STR.balanceVsNetIncomeNote, isEnglish)}
+            </p>
+          </CardContent>
+        </Card>
 
         {results.reconciliation?.bankSummaryFound && (
           <div

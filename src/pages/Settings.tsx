@@ -11,6 +11,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { STR, tr } from "@/utils/i18n";
+import { sendPasswordRecovery } from "@/utils/recovery";
 
 const MIN_PASSWORD = 8;
 const AVATAR_SIZE = 256;
@@ -112,8 +113,6 @@ const Settings = () => {
   const [name, setName] = useState(profile?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [newEmail, setNewEmail] = useState("");
-  const [savingEmail, setSavingEmail] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -173,16 +172,14 @@ const Settings = () => {
     toast({ title: "✅", description: tr(STR.nameUpdated, isEnglish) });
   };
 
-  const handleChangeEmail = async () => {
-    const email = newEmail.trim();
-    if (!/^\S+@\S+\.\S+$/.test(email)) { fail(tr(STR.invalidEmail, isEnglish)); return; }
-    setSavingEmail(true);
-    // Supabase sends a confirmation link; the sign-in email only changes once it's confirmed.
-    const { error } = await supabase.auth.updateUser({ email });
-    setSavingEmail(false);
-    if (error) { fail(error.message); return; }
-    setNewEmail("");
-    toast({ title: "📧", description: tr(STR.emailChangeSent, isEnglish) });
+  const [sendingRecovery, setSendingRecovery] = useState(false);
+  const handleForgot = async () => {
+    if (!user?.email) return;
+    setSendingRecovery(true);
+    const error = await sendPasswordRecovery(user.email);
+    setSendingRecovery(false);
+    if (error) { fail(error); return; }
+    toast({ title: "📧", description: tr(STR.forgotSent, isEnglish) });
   };
 
   const passwordTooShort = newPassword.length > 0 && newPassword.length < MIN_PASSWORD;
@@ -291,36 +288,17 @@ const Settings = () => {
         </CardContent>
       </Card>
 
-      {/* Sign-in email */}
+      {/* Account email (read-only: it's the email the person registered with) */}
       <Card className="neon-border bg-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Mail className="h-4 w-4 text-primary" />
-            {tr(STR.signInEmailSection, isEnglish)}
+            {tr(STR.yourAccountEmail, isEnglish)}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
-            <p className="text-xs text-muted-foreground">{tr(STR.currentEmailLabel, isEnglish)}</p>
-            <p className="font-medium text-foreground">{user.email}</p>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">{tr(STR.newEmailLabel, isEnglish)}</label>
-            <div className="flex gap-2">
-              <Input
-                type="email"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                placeholder="nombre@empresa.com"
-                className="bg-muted border-border"
-              />
-              <Button variant="outline" onClick={handleChangeEmail} disabled={savingEmail || !newEmail.trim()} className="shrink-0">
-                {savingEmail && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                {tr(STR.changeEmailButton, isEnglish)}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">{tr(STR.emailChangeHint, isEnglish)}</p>
-          </div>
+        <CardContent className="space-y-1.5">
+          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 font-medium text-foreground break-all">{user.email}</p>
+          <p className="text-xs text-muted-foreground">{tr(STR.accountEmailHint, isEnglish)}</p>
         </CardContent>
       </Card>
 
@@ -427,6 +405,13 @@ const Settings = () => {
             <Button onClick={handleChangePassword} disabled={!canChangePassword}>
               {savingPassword && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               {tr(STR.savePasswordButton, isEnglish)}
+            </Button>
+          </div>
+          <div className="border-t border-border pt-3 flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-muted-foreground">{tr(STR.forgotFromSettingsHint, isEnglish)}</p>
+            <Button variant="outline" size="sm" onClick={handleForgot} disabled={sendingRecovery}>
+              {sendingRecovery && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              {tr(STR.forgotPassword, isEnglish)}
             </Button>
           </div>
         </CardContent>

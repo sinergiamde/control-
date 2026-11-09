@@ -53,7 +53,7 @@ const fmtTxnDate = (d: Date, isEnglish: boolean) =>
 const Receipts = () => {
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user, session, role, canManageClients, loading: authLoading } = useAuth();
+  const { user, session, canManageClients, permissions, loading: authLoading } = useAuth();
   const { uploadsLocked } = useTrialStatus();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -402,7 +402,9 @@ const Receipts = () => {
         </div>
       </div>
 
-      {uploadsLocked ? (
+      {!permissions.receipts ? (
+        <Card className="bg-card"><CardContent className="p-6 text-center text-sm text-muted-foreground">{tr(STR.noPermissionHere, isEnglish)}</CardContent></Card>
+      ) : uploadsLocked ? (
         <UploadLockedCard />
       ) : (
         <Card className="neon-border bg-card shadow-2xl">
@@ -554,7 +556,7 @@ const Receipts = () => {
                     <Button size="sm" variant="ghost" onClick={() => openEdit(r)} title={t("editWord")}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    {role !== "authorized" && (
+                    {permissions.delete && (
                       <Button size="sm" variant="ghost" onClick={() => handleDelete(r)}
                         className="text-destructive hover:text-destructive hover:bg-destructive/10">
                         <Trash2 className="h-4 w-4" />
