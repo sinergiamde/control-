@@ -61,8 +61,8 @@ export function reconcileStatement(source: any, isEnglish = true): Reconciliatio
   const personal = Array.isArray(source?.personal) ? source.personal : [];
   const thirdParty = Array.isArray(source?.thirdPartyPayments) ? source.thirdPartyPayments : [];
 
-  // Deposits the bank counts include transfers in / credit-line advances, which are not income.
-  const computedDeposits = sumAmt(revenues) + sumAmt(source?.transfersIn);
+  // Every deposit the bank counts is income, so revenues must add up to the bank's deposits.
+  const computedDeposits = sumAmt(revenues);
   const computedOutflows = sumAmt(cogs) + sumAmt(opex) + sumAmt(fees) + sumAmt(personal);
   const computedChecks = thirdParty
     .filter((p: any) => String(p?.method) === "Check")

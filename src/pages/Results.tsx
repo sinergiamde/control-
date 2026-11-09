@@ -854,31 +854,6 @@ const Results = () => {
           </CardContent>
         </Card>
 
-        {Array.isArray(acctSource?.transfersIn) && acctSource.transfersIn.length > 0 && (
-          <Card className="neon-border bg-card mb-6">
-            <CardContent className="p-4 space-y-3">
-              <div>
-                <p className="font-semibold text-foreground">{tr(STR.transfersInTitle, isEnglish)}</p>
-                <p className="text-xs text-muted-foreground">{tr(STR.transfersInDesc, isEnglish)}</p>
-              </div>
-              <div className="divide-y divide-border/50">
-                {acctSource.transfersIn.map((it: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <span className="min-w-0 truncate text-foreground">
-                      <span className="text-muted-foreground mr-2">{it?.date || ""}</span>{it?.desc || it?.name || "—"}
-                    </span>
-                    <span className="font-semibold text-foreground shrink-0">${toNumber(it?.amt ?? it?.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center justify-between border-t border-border pt-2 text-sm font-semibold">
-                <span>{tr(STR.transfersInTotal, isEnglish)}</span>
-                <span>${acctSource.transfersIn.reduce((sum: number, it: any) => sum + toNumber(it?.amt ?? it?.amount), 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         {results.reconciliation?.bankSummaryFound && (
           <div
             className={`mb-6 flex items-start gap-2 text-sm rounded-lg border px-3 py-2 opacity-0 animate-fade-in ${

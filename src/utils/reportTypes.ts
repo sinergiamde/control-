@@ -112,7 +112,6 @@ export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
   personal: [
     "Clothing", "Entertainment", "Personal purchases", "Zelle to family (no business justification)",
     "Personal bank transfer", "Health / personal services", "Meals (restaurant/bar)", "Other personal (specify)",
-    "Transfer in (not income)",
   ],
 };
 
@@ -148,10 +147,17 @@ const transactionSignature = (item: any): string => {
 const REFUND_PATTERN = /(debit card return|purchase return|merchant (credit|return)|\brefund(ed)?\b|\breversal\b|credit adjustment|reembolso|devoluci[oó]n)/i;
 const NOT_REFUND_PATTERN = /(fee|returned (check|item)|\bnsf\b|insufficient)/i;
 export const REFUND_CATEGORY = "Refunds and returns";
-/** Money coming IN that is not income: a transfer from the owner's other account or a credit-line
- * advance. It is neither revenue nor an expense, so it lives in its own `transfersIn` list: counted as
- * a deposit when reconciling against the bank, never in the P&L. */
-export const TRANSFER_IN_CATEGORY = "Transfer in (not income)";
+/** Every dollar that comes INTO the account is income (the client's rule: total income = the bank's
+ * total deposits). An incoming transfer, even from another account of the same owner, is reported in
+ * revenues with this category. */
+export const INCOMING_TRANSFER_CATEGORY = "Bank transfer";
+/** Category an earlier version used to keep incoming transfers out of income; items stored with it
+ * (or in the old `transfersIn` list) are moved back into revenues. */
+const LEGACY_TRANSFER_IN_CATEGORY = "Transfer in (not income)";
+/** A bank line that is money coming in ("ONLINE TRANSFER MOBILE FROM ****4612", "ZELLE FROM ...").
+ * Lines naming both a source and a destination ("transfer from CHK to SAV") are ambiguous and left alone. */
+const INCOMING_PATTERN = /\b(transfer|xfer|trnsfr|zelle)\b.*\bfrom\b/i;
+const NOT_INCOMING_PATTERN = /\bto\b|\bfee\b/i;
 
 const bankNumber = (n: unknown): number | null => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
 
@@ -211,16 +217,31 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
   }
 
   const rebucketed: Record<TransactionList, any[]> = { revenues: [], cogs: [], opex: [], fees: [], personal: [] };
-  const transfersIn: any[] = Array.isArray(source.transfersIn) ? [...source.transfersIn] : [];
+  // An earlier version kept incoming transfers in a separate `transfersIn` list, outside income.
+  if (Array.isArray(source.transfersIn)) {
+    for (const item of source.transfersIn) {
+      if (item && typeof item === "object") item.category = INCOMING_TRANSFER_CATEGORY;
+      rebucketed.revenues.push(item);
+    }
+  }
+  delete source.transfersIn;
   for (const list of TRANSACTION_LISTS) {
     for (const item of Array.isArray(source[list]) ? source[list] : []) {
-      // Money in that isn't income: kept out of both revenue and expenses.
-      if (item?.category === TRANSFER_IN_CATEGORY) {
-        transfersIn.push(item);
+      const text = String(item?.desc || item?.name || "");
+      // Money that came into the account is income, never an expense.
+      if (item?.category === LEGACY_TRANSFER_IN_CATEGORY) {
+        item.category = INCOMING_TRANSFER_CATEGORY;
+        rebucketed.revenues.push(item);
+        continue;
+      }
+      if (list !== "revenues" && !item?.manual && INCOMING_PATTERN.test(text) && !NOT_INCOMING_PATTERN.test(text)) {
+        item.category = INCOMING_TRANSFER_CATEGORY;
+        rebucketed.revenues.push(item);
+        notesEn.push(`"${text}" is money that came INTO the account — it is reported as income, not as an expense.`);
+        notesEs.push(`"${text}" es dinero que ENTRÓ a la cuenta — se reporta como ingreso, no como gasto.`);
         continue;
       }
       // Safety net for refunds the AI left among the expenses (unless a person moved it there on purpose).
-      const text = String(item?.desc || item?.name || "");
       if (list !== "revenues" && !item?.manual && REFUND_PATTERN.test(text) && !NOT_REFUND_PATTERN.test(text)) {
         item.category = REFUND_CATEGORY;
         rebucketed.revenues.push(item);
@@ -243,7 +264,7 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
 
   // Self-check against the bank's own summary box. If deposits are short by exactly the amount the
   // withdrawals are long by, a deposit was filed as an expense: find the item(s) that add up to that
-  // difference and move them to transfersIn. Only ever done when the bank's numbers prove it.
+  // difference and move them to income. Only ever done when the bank's numbers prove it.
   const bank = source.bankSummary;
   const bankDeposits = bank?.found ? bankNumber(bank?.deposits?.amount) : null;
   const wParts = bank?.found
@@ -263,7 +284,7 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
   if (bankDeposits !== null && bankOutKnown !== null) {
     const sum = (arr: any[]) => arr.reduce((s, it) => s + looseNumber(it?.amt ?? it?.amount), 0);
     const bankOut = bankOutKnown;
-    const depDelta = bankDeposits - (sum(source.revenues) + sum(transfersIn));
+    const depDelta = bankDeposits - sum(source.revenues);
     const outDelta = sum(source.cogs) + sum(source.opex) + sum(source.fees) + sum(source.personal) - bankOut;
     if (depDelta > 1 && Math.abs(depDelta - outDelta) <= 1) {
       for (const list of ["personal", "opex", "cogs", "fees"] as TransactionList[]) {
@@ -273,17 +294,16 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
         const moved = hit.map((i) => arr[i]);
         source[list] = arr.filter((_, i) => !hit.includes(i));
         for (const it of moved) {
-          it.category = TRANSFER_IN_CATEGORY;
-          transfersIn.push(it);
+          it.category = INCOMING_TRANSFER_CATEGORY;
+          source.revenues.push(it);
           const desc = it?.desc || it?.name || "?";
-          notesEn.push(`"${desc}" (${it?.date || "?"}, $${looseNumber(it?.amt ?? it?.amount).toFixed(2)}) is money that came INTO the account (the bank's deposits include it) — it is shown as a transfer in, not as an expense and not as income.`);
-          notesEs.push(`"${desc}" (${it?.date || "?"}, $${looseNumber(it?.amt ?? it?.amount).toFixed(2)}) es dinero que ENTRÓ a la cuenta (los depósitos del banco lo incluyen) — se muestra como transferencia recibida, no como gasto ni como ingreso.`);
+          notesEn.push(`"${desc}" (${it?.date || "?"}, $${looseNumber(it?.amt ?? it?.amount).toFixed(2)}) is money that came INTO the account (the bank's deposits include it) — it is reported as income, not as an expense.`);
+          notesEs.push(`"${desc}" (${it?.date || "?"}, $${looseNumber(it?.amt ?? it?.amount).toFixed(2)}) es dinero que ENTRÓ a la cuenta (los depósitos del banco lo incluyen) — se reporta como ingreso, no como gasto.`);
         }
         break;
       }
     }
   }
-  if (transfersIn.length > 0) source.transfersIn = transfersIn;
 
   return { notesEn, notesEs };
 };
