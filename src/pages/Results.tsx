@@ -818,7 +818,7 @@ const Results = () => {
                 { label: tr(STR.bankLabel, isEnglish), value: account.bankName },
                 { label: tr(STR.accountHolderLabel, isEnglish), value: account.accountHolder },
                 { label: tr(STR.accountLabel, isEnglish), value: [account.accountType, account.last4 ? `•••• ${account.last4}` : ""].filter(Boolean).join(" · ") },
-                { label: tr(STR.statementPeriodLabel, isEnglish), value: [account.periodStart, account.periodEnd].filter(Boolean).join(" – ") },
+                { label: tr(STR.statementPeriodLabel, isEnglish), value: pickText(acctSource, "period", isEnglish) || results.period || "" },
               ].map((f) => (
                 <div key={f.label} className="min-w-0">
                   <p className="text-xs text-muted-foreground">{f.label}</p>
