@@ -112,6 +112,7 @@ export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
   personal: [
     "Clothing", "Entertainment", "Personal purchases", "Zelle to family (no business justification)",
     "Personal bank transfer", "Health / personal services", "Meals (restaurant/bar)", "Other personal (specify)",
+    "Transfer in (not income)",
   ],
 };
 
@@ -147,6 +148,25 @@ const transactionSignature = (item: any): string => {
 const REFUND_PATTERN = /(debit card return|purchase return|merchant (credit|return)|\brefund(ed)?\b|\breversal\b|credit adjustment|reembolso|devoluci[oó]n)/i;
 const NOT_REFUND_PATTERN = /(fee|returned (check|item)|\bnsf\b|insufficient)/i;
 export const REFUND_CATEGORY = "Refunds and returns";
+/** Money coming IN that is not income: a transfer from the owner's other account or a credit-line
+ * advance. It is neither revenue nor an expense, so it lives in its own `transfersIn` list: counted as
+ * a deposit when reconciling against the bank, never in the P&L. */
+export const TRANSFER_IN_CATEGORY = "Transfer in (not income)";
+
+const bankNumber = (n: unknown): number | null => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
+
+/** Smallest group (1-3) of items whose amounts add up to `target` to the cent. */
+const findSubset = (items: { amt: number }[], target: number): number[] | null => {
+  const eq = (v: number) => Math.abs(v - target) < 0.011;
+  const n = items.length;
+  for (let i = 0; i < n; i++) if (eq(items[i].amt)) return [i];
+  if (n > 80) return null;
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (eq(items[i].amt + items[j].amt)) return [i, j];
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) for (let k = j + 1; k < n; k++) {
+    if (eq(items[i].amt + items[j].amt + items[k].amt)) return [i, j, k];
+  }
+  return null;
+};
 
 /** Cleans up one statement's raw AI output before anything totals, stores, or renders it:
  *  1) De-duplicates transactions the AI accidentally classified into two different lists (same
@@ -191,8 +211,14 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
   }
 
   const rebucketed: Record<TransactionList, any[]> = { revenues: [], cogs: [], opex: [], fees: [], personal: [] };
+  const transfersIn: any[] = Array.isArray(source.transfersIn) ? [...source.transfersIn] : [];
   for (const list of TRANSACTION_LISTS) {
     for (const item of Array.isArray(source[list]) ? source[list] : []) {
+      // Money in that isn't income: kept out of both revenue and expenses.
+      if (item?.category === TRANSFER_IN_CATEGORY) {
+        transfersIn.push(item);
+        continue;
+      }
       // Safety net for refunds the AI left among the expenses (unless a person moved it there on purpose).
       const text = String(item?.desc || item?.name || "");
       if (list !== "revenues" && !item?.manual && REFUND_PATTERN.test(text) && !NOT_REFUND_PATTERN.test(text)) {
@@ -214,6 +240,50 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
     }
   }
   for (const list of TRANSACTION_LISTS) source[list] = rebucketed[list];
+
+  // Self-check against the bank's own summary box. If deposits are short by exactly the amount the
+  // withdrawals are long by, a deposit was filed as an expense: find the item(s) that add up to that
+  // difference and move them to transfersIn. Only ever done when the bank's numbers prove it.
+  const bank = source.bankSummary;
+  const bankDeposits = bank?.found ? bankNumber(bank?.deposits?.amount) : null;
+  const wParts = bank?.found
+    ? [bank.checksPaid, bank.atmDebitWithdrawals, bank.electronicWithdrawals, bank.otherWithdrawals].map((p: any) => bankNumber(p?.amount))
+    : [];
+  // What really left the account: the bank's printed withdrawal buckets when all are there, otherwise
+  // opening balance + deposits - closing balance (the account's own arithmetic).
+  // The bank summary marks "not printed" with -1, so only non-negative balances are trusted here.
+  const opening = bank?.found ? bankNumber(bank.beginningBalance) : null;
+  const closing = bank?.found ? bankNumber(bank.endingBalance) : null;
+  const bankOutKnown: number | null =
+    wParts.length === 4 && wParts.every((v) => v !== null)
+      ? (wParts as number[]).reduce((s, v) => s + v, 0)
+      : bankDeposits !== null && opening !== null && closing !== null
+      ? opening + bankDeposits - closing
+      : null;
+  if (bankDeposits !== null && bankOutKnown !== null) {
+    const sum = (arr: any[]) => arr.reduce((s, it) => s + looseNumber(it?.amt ?? it?.amount), 0);
+    const bankOut = bankOutKnown;
+    const depDelta = bankDeposits - (sum(source.revenues) + sum(transfersIn));
+    const outDelta = sum(source.cogs) + sum(source.opex) + sum(source.fees) + sum(source.personal) - bankOut;
+    if (depDelta > 1 && Math.abs(depDelta - outDelta) <= 1) {
+      for (const list of ["personal", "opex", "cogs", "fees"] as TransactionList[]) {
+        const arr: any[] = source[list];
+        const hit = findSubset(arr.map((it) => ({ amt: looseNumber(it?.amt ?? it?.amount) })), depDelta);
+        if (!hit) continue;
+        const moved = hit.map((i) => arr[i]);
+        source[list] = arr.filter((_, i) => !hit.includes(i));
+        for (const it of moved) {
+          it.category = TRANSFER_IN_CATEGORY;
+          transfersIn.push(it);
+          const desc = it?.desc || it?.name || "?";
+          notesEn.push(`"${desc}" (${it?.date || "?"}, $${looseNumber(it?.amt ?? it?.amount).toFixed(2)}) is money that came INTO the account (the bank's deposits include it) — it is shown as a transfer in, not as an expense and not as income.`);
+          notesEs.push(`"${desc}" (${it?.date || "?"}, $${looseNumber(it?.amt ?? it?.amount).toFixed(2)}) es dinero que ENTRÓ a la cuenta (los depósitos del banco lo incluyen) — se muestra como transferencia recibida, no como gasto ni como ingreso.`);
+        }
+        break;
+      }
+    }
+  }
+  if (transfersIn.length > 0) source.transfersIn = transfersIn;
 
   return { notesEn, notesEs };
 };

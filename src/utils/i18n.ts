@@ -8,6 +8,7 @@
 export const CATEGORY_ES: Record<string, string> = {
   // Income
   "Bank transfer": "Transferencia bancaria",
+  "Transfer in (not income)": "Transferencia recibida (no es ingreso)",
   "Refunds and returns": "Devoluciones y reembolsos",
   "Wire transfer": "Transferencia electrónica",
   "Zelle": "Zelle",
@@ -533,6 +534,9 @@ export const STR = {
   myAnalysesDesc: { en: "The statements you've analyzed. Click one to open its report.", es: "Los extractos que has analizado. Haz clic en uno para abrir su reporte." },
   noAnalysesYet: { en: "You haven't analyzed any statement yet.", es: "Aún no has analizado ningún extracto." },
   viewAllWord: { en: "View all", es: "Ver todos" },
+  transfersInTitle: { en: "Transfers in — not income", es: "Transferencias recibidas — no son ingreso" },
+  transfersInDesc: { en: "Money that came into the account from your other accounts or a credit line. The bank counts it as a deposit, but it is neither income nor an expense, so it is not in the totals above.", es: "Dinero que entró a la cuenta desde otras cuentas tuyas o una línea de crédito. El banco lo cuenta como depósito, pero no es ingreso ni gasto, por eso no está en los totales de arriba." },
+  transfersInTotal: { en: "Total transfers in", es: "Total transferencias recibidas" },
   themeSection: { en: "Theme", es: "Tema" },
   themeLight: { en: "Light", es: "Claro" },
   themeDark: { en: "Dark", es: "Oscuro" },

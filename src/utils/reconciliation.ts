@@ -61,7 +61,8 @@ export function reconcileStatement(source: any, isEnglish = true): Reconciliatio
   const personal = Array.isArray(source?.personal) ? source.personal : [];
   const thirdParty = Array.isArray(source?.thirdPartyPayments) ? source.thirdPartyPayments : [];
 
-  const computedDeposits = sumAmt(revenues);
+  // Deposits the bank counts include transfers in / credit-line advances, which are not income.
+  const computedDeposits = sumAmt(revenues) + sumAmt(source?.transfersIn);
   const computedOutflows = sumAmt(cogs) + sumAmt(opex) + sumAmt(fees) + sumAmt(personal);
   const computedChecks = thirdParty
     .filter((p: any) => String(p?.method) === "Check")
@@ -69,8 +70,12 @@ export function reconcileStatement(source: any, isEnglish = true): Reconciliatio
 
   const bankWithdrawalParts = [bank.checksPaid, bank.atmDebitWithdrawals, bank.electronicWithdrawals, bank.otherWithdrawals];
   const bankWithdrawalsKnown = bankWithdrawalParts.every((p) => p.amount !== null);
+  // When the bank didn't print every withdrawal bucket, the account's own arithmetic still gives the
+  // total that left it: opening balance + deposits - closing balance.
   const bankWithdrawalsTotal = bankWithdrawalsKnown
     ? bankWithdrawalParts.reduce((sum, p) => sum + (p.amount as number), 0)
+    : bank.beginningBalance !== null && bank.endingBalance !== null && bank.deposits.amount !== null
+    ? bank.beginningBalance + bank.deposits.amount - bank.endingBalance
     : null;
 
   const depositsLabel = isEnglish ? "Deposits (Income)" : "Depósitos (Ingresos)";
@@ -84,7 +89,7 @@ export function reconcileStatement(source: any, isEnglish = true): Reconciliatio
     buildField("checksIssued", checksLabel, bank.checksPaid.amount, computedChecks),
   ];
 
-  if (bank.beginningBalance !== null && bank.endingBalance !== null && bankWithdrawalsTotal !== null && bank.deposits.amount !== null) {
+  if (bankWithdrawalsKnown && bank.beginningBalance !== null && bank.endingBalance !== null && bank.deposits.amount !== null) {
     const expectedEnding = bank.beginningBalance + bank.deposits.amount - bankWithdrawalsTotal;
     fields.push(buildField("endingBalance", endingBalanceLabel, bank.endingBalance, expectedEnding));
   }
