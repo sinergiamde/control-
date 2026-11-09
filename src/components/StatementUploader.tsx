@@ -158,27 +158,48 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
 
   const analyzeOne = async (file: File, clientId: string) => {
     const fileBase64 = await fileToBase64(file, t("couldNotReadFile"));
-    const response = await fetch(ANALYZE_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({
-        fileBase64,
-        mediaType: file.type || "application/octet-stream",
-        fileName: file.name,
-        lang,
-      }),
-    });
-
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-      console.error("Analyze API error:", response.status, data);
-      throw new Error(data?.error || data?.message || t("analyzerCouldNotRead"));
+    let response: Response;
+    try {
+      response = await fetch(ANALYZE_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          fileBase64,
+          mediaType: file.type || "application/octet-stream",
+          fileName: file.name,
+          lang,
+        }),
+      });
+    } catch (networkError) {
+      console.error("Analyze API unreachable:", networkError);
+      throw new Error(t("analyzerNoConnection"));
     }
-    if (!data) throw new Error(t("analyzerNoResults"));
-    if ((data as any).error) throw new Error((data as any).error);
+
+    // The analyzer streams its answer (spaces while it works, then the JSON), so a body that can't be
+    // parsed means the connection was cut before it finished.
+    const raw = await response.text().catch(() => "");
+    let data: any = null;
+    try {
+      data = raw.trim() ? JSON.parse(raw) : null;
+    } catch {
+      data = null;
+    }
+    // Errors from the platform in front of the analyzer arrive in English and technical
+    // ("Request idle timeout limit (150s) reached"): show the person what happened in plain words.
+    const platformText = `${data?.message || data?.msg || ""} ${data?.error && typeof data.error !== "string" ? JSON.stringify(data.error) : ""}`;
+    if (response.status === 504 || response.status === 546 || /timeout|timed out|wall clock|time limit/i.test(platformText)) {
+      console.error("Analyze API timeout:", response.status, raw.slice(0, 300));
+      throw new Error(t("analyzerTimeout"));
+    }
+    if (!response.ok) {
+      console.error("Analyze API error:", response.status, raw.slice(0, 500));
+      throw new Error(typeof data?.error === "string" && data.error ? data.error : t("analyzerFailed"));
+    }
+    if (!data) throw new Error(raw.length > 0 ? t("analyzerCutOff") : t("analyzerNoResults"));
+    if (data.error) throw new Error(typeof data.error === "string" ? data.error : t("analyzerFailed"));
 
     if (!user) return { data, analysisId: undefined };
 
@@ -448,6 +469,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
+            <p className="text-xs text-muted-foreground">{t("analyzingPatience")}</p>
           </div>
         )}
 

@@ -330,6 +330,157 @@ const reconcileGaps = (r: any) => {
   return { depositsDelta, withdrawalsDelta, score: Math.abs(depositsDelta) + Math.abs(withdrawalsDelta) };
 };
 
+// Statements run on Claude Sonnet 5 with thinking off: it reads a whole statement reliably and fast
+// enough for long statements. A slower model would hit the platform's time limit more often.
+const STATEMENT_MODEL = "claude-sonnet-5";
+// The platform stops a function at its wall-clock limit (400 s). Every AI call is aborted before
+// that, so the person always gets an answer instead of a dropped connection.
+const DEADLINE_MS = 330_000;
+// The bank-reconciliation second pass takes about as long as the first one: only start it when
+// both fit comfortably before the deadline.
+const RETRY_ONLY_BEFORE_MS = 120_000;
+
+const ACCOUNT_INFO_PROMPT = `Lees extractos bancarios. Extrae SOLO los datos de la cuenta tal como los imprime el banco en el encabezado o primera página; cópialos exactos, nunca los calcules ni los infieras:
+- bankName: nombre del banco ("" si no aparece).
+- accountHolder: titular de la cuenta tal como aparece ("" si no aparece).
+- accountNumberLast4: SOLO los últimos 4 dígitos del número de cuenta, nunca el número completo ("" si no aparecen).
+- beginningBalance: saldo inicial / anterior impreso ("Beginning Balance", "Previous Balance", "Opening Balance", "Saldo anterior"); puede ser negativo si hay sobregiro. Usa -999999999 (nunca 0) si NO está impreso.
+- endingBalance: saldo final impreso ("Ending Balance", "Saldo final"). Usa -999999999 si NO está impreso.`;
+
+/** An error whose message is already written for the person who uploaded the statement. */
+class UserFacingError extends Error {}
+
+const TIMEOUT_MESSAGE =
+  "El análisis tardó demasiado y se detuvo antes de terminar. Vuelve a intentarlo en un momento; si el extracto tiene muchas páginas, súbelo por meses o en partes más cortas.";
+
+const userMessageFor = (error: unknown): string => {
+  if (error instanceof UserFacingError) return error.message;
+  if ((error as { name?: string })?.name === "AbortError") return TIMEOUT_MESSAGE;
+  return "No se pudo completar el análisis por un error inesperado. Vuelve a intentarlo; si se repite, avísale al administrador.";
+};
+
+const anthropicErrorMessage = (status: number, body: string): string => {
+  const t = body.toLowerCase();
+  if (t.includes("credit balance")) return "La cuenta de la IA se quedó sin saldo. Avísale al administrador para que la recargue.";
+  if (status === 429 || status === 529 || t.includes("overloaded")) return "El servicio de IA está saturado en este momento. Espera un minuto y vuelve a intentarlo.";
+  if (status === 401 || status === 403) return "El servidor no pudo conectarse con la IA (clave de acceso rechazada). Avísale al administrador.";
+  if (!t.includes("grammar") && (status === 413 || t.includes("too long") || t.includes("too large"))) {
+    return "El extracto es demasiado grande para analizarlo de una vez. Súbelo por meses o en partes más cortas.";
+  }
+  return `El análisis con IA falló (código ${status}). Vuelve a intentarlo en un momento; si se repite, avísale al administrador.`;
+};
+
+/** One call to Claude, aborted at `deadlineAt` (epoch ms). Never throws for HTTP errors. */
+const callClaude = async (apiKey: string, body: Record<string, unknown>, deadlineAt: number) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(0, deadlineAt - Date.now()));
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return { ok: response.ok, status: response.status, text: await response.text() };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const firstText = (completion: any): string | null =>
+  Array.isArray(completion?.content) ? completion.content.find((b: any) => b.type === "text")?.text ?? null : null;
+
+const runAnalysis = async (apiKey: string, userContent: unknown[], startedAt: number) => {
+  const deadlineAt = startedAt + DEADLINE_MS;
+
+  // Account details come from a second, tiny request running in parallel: the main schema is already
+  // at the provider's grammar size limit, so adding fields there makes the whole analysis fail.
+  const accountPromise = callClaude(apiKey, {
+    model: STATEMENT_MODEL,
+    max_tokens: 600,
+    thinking: { type: "disabled" },
+    system: ACCOUNT_INFO_PROMPT,
+    output_config: { format: { type: "json_schema", schema: accountInfoSchema } },
+    messages: [{ role: "user", content: userContent }],
+  }, deadlineAt)
+    .then((r) => (r.ok ? firstText(JSON.parse(r.text)) : null))
+    .then((text) => (text ? JSON.parse(text) : null))
+    .catch(() => null);
+
+  const mainRequest = {
+    model: STATEMENT_MODEL,
+    max_tokens: 32000,
+    thinking: { type: "disabled" },
+    system: [{ type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } }],
+    output_config: { format: { type: "json_schema", schema: RESULT_SCHEMA } },
+    messages: [{ role: "user", content: userContent }],
+  };
+
+  const first = await callClaude(apiKey, mainRequest, deadlineAt);
+  if (!first.ok) {
+    console.error("analyze-statement Anthropic error:", first.status, first.text.slice(0, 1000));
+    throw new UserFacingError(anthropicErrorMessage(first.status, first.text));
+  }
+  const completion = JSON.parse(first.text);
+  if (completion.stop_reason === "refusal") {
+    throw new UserFacingError("La IA no pudo leer este documento. Verifica que sea el extracto bancario original en PDF (no una foto borrosa ni un archivo protegido) y vuelve a intentarlo.");
+  }
+  if (completion.stop_reason === "max_tokens") {
+    console.error("analyze-statement truncated: max_tokens reached", JSON.stringify(completion.usage ?? {}));
+    throw new UserFacingError("El extracto tiene demasiadas transacciones para analizarlo de una vez. Súbelo por meses o en partes más cortas.");
+  }
+  const text = firstText(completion);
+  if (!text) {
+    console.error("analyze-statement no text block. stop_reason:", completion.stop_reason);
+    throw new UserFacingError("La IA no devolvió resultados para este documento. Vuelve a intentarlo.");
+  }
+  const parsed = JSON.parse(text);
+  parsed.accountInfo = (await accountPromise) ?? null;
+
+  // Self-check against the bank's own totals. If the classified transactions don't add up to what the
+  // bank printed, ask the model once to find what is missing or misfiled, and keep whichever result
+  // reconciles better. Only when there is time for it; an aborted second pass keeps the first result.
+  let finalResult: any = parsed;
+  const gapsFirst = reconcileGaps(parsed);
+  if (gapsFirst && gapsFirst.score > 1 && Date.now() - startedAt < RETRY_ONLY_BEFORE_MS) {
+    try {
+      const retry = await callClaude(apiKey, {
+        ...mainRequest,
+        messages: [
+          { role: "user", content: userContent },
+          { role: "assistant", content: text },
+          {
+            role: "user",
+            content: `El resultado anterior NO cuadra con los totales impresos por el banco. Depósitos del banco menos depósitos clasificados = ${gapsFirst.depositsDelta} (positivo = faltan ingresos o entradas). Retiros clasificados menos retiros del banco = ${gapsFirst.withdrawalsDelta} (positivo = sobran gastos). Revisa el extracto línea por línea y encuentra las transacciones faltantes, duplicadas o mal clasificadas. Recuerda: TODO el dinero que ENTRA a la cuenta (incluidas transferencias desde otras cuentas) va en REVENUES; nunca como gasto. Nunca inventes ni ajustes un monto para que cuadre. Devuelve el JSON COMPLETO corregido.`,
+          },
+        ],
+      }, deadlineAt);
+      if (retry.ok) {
+        const retryCompletion = JSON.parse(retry.text);
+        const retryText = retryCompletion.stop_reason === "end_turn" ? firstText(retryCompletion) : null;
+        if (retryText) {
+          const candidate = JSON.parse(retryText);
+          const gapsRetry = reconcileGaps(candidate);
+          if (gapsRetry && gapsRetry.score < gapsFirst.score) {
+            candidate.accountInfo = parsed.accountInfo;
+            finalResult = candidate;
+          }
+        }
+      }
+    } catch (retryError) {
+      console.error("analyze-statement verification retry skipped:", retryError);
+    }
+  }
+  const gapsFinal = reconcileGaps(finalResult);
+  finalResult.verification = {
+    checked: gapsFinal !== null,
+    depositsDelta: gapsFinal?.depositsDelta ?? null,
+    withdrawalsDelta: gapsFinal?.withdrawalsDelta ?? null,
+    retried: finalResult !== parsed,
+  };
+  return finalResult;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -405,164 +556,45 @@ serve(async (req) => {
       ];
     }
 
-    // Account details come from a second, tiny request running in parallel: the main schema is already
-    // at the provider's grammar size limit, so adding fields there makes the whole analysis fail.
-    const accountPromise = fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "server-side-fallback-2026-07-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-opus-5-5",
-        fallbacks: "default",
-        max_tokens: 4000,
-        system: `Lees extractos bancarios. Extrae SOLO los datos de la cuenta tal como los imprime el banco en el encabezado o primera página; cópialos exactos, nunca los calcules ni los infieras:
-- bankName: nombre del banco ("" si no aparece).
-- accountHolder: titular de la cuenta tal como aparece ("" si no aparece).
-- accountNumberLast4: SOLO los últimos 4 dígitos del número de cuenta, nunca el número completo ("" si no aparecen).
-- beginningBalance: saldo inicial / anterior impreso ("Beginning Balance", "Previous Balance", "Opening Balance", "Saldo anterior"); puede ser negativo si hay sobregiro. Usa -999999999 (nunca 0) si NO está impreso.
-- endingBalance: saldo final impreso ("Ending Balance", "Saldo final"). Usa -999999999 si NO está impreso.`,
-        output_config: { effort: "low", format: { type: "json_schema", schema: accountInfoSchema } },
-        messages: [{ role: "user", content: userContent }],
-      }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((c) => {
-        const text = Array.isArray(c?.content) ? c.content.find((b: any) => b.type === "text")?.text : null;
-        return text ? JSON.parse(text) : null;
-      })
-      .catch(() => null);
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "server-side-fallback-2026-07-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-opus-5-5",
-        fallbacks: "default",
-        max_tokens: 64000,
-        system: [
-          { type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } },
-        ],
-        output_config: {
-          effort: "medium",
-          format: { type: "json_schema", schema: RESULT_SCHEMA },
-        },
-        messages: [{ role: "user", content: userContent }],
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("analyze-statement Anthropic error:", response.status, errorText);
-      return new Response(JSON.stringify({ error: "El análisis con IA falló.", detail: `${response.status}: ${errorText.slice(0, 400)}` }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const completion = await response.json();
-
-    if (completion.stop_reason === "refusal") {
-      return new Response(JSON.stringify({ error: "El modelo no pudo procesar este documento." }), {
-        status: 422,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (completion.stop_reason === "max_tokens") {
-      console.error("analyze-statement truncated: max_tokens reached", JSON.stringify(completion).slice(0, 500));
-      return new Response(JSON.stringify({ error: "El extracto es demasiado largo para analizarlo de una vez. Intenta subirlo por separado o en partes más cortas." }), {
-        status: 422,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const textBlock = Array.isArray(completion.content)
-      ? completion.content.find((b: any) => b.type === "text")
-      : null;
-
-    if (!textBlock?.text) {
-      console.error("analyze-statement no text block. stop_reason:", completion.stop_reason, "content:", JSON.stringify(completion.content).slice(0, 500));
-      throw new Error(`La respuesta de Claude no incluyó contenido de texto (stop_reason: ${completion.stop_reason || "desconocido"}).`);
-    }
-
-    const parsed = JSON.parse(textBlock.text);
-    parsed.accountInfo = (await accountPromise) ?? null;
-
-    // Self-check against the bank's own totals. If the classified transactions don't add up to what the
-    // bank printed, ask the model once to find what is missing or misfiled, and keep whichever result
-    // reconciles better. Skipped when the first pass already took long (to stay under the time limit).
-    let finalResult: any = parsed;
-    const gapsFirst = reconcileGaps(parsed);
-    if (gapsFirst && gapsFirst.score > 1 && Date.now() - requestStartedAt < 75000) {
-      try {
-        const retryResponse = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "anthropic-beta": "server-side-fallback-2026-07-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "claude-opus-5-5",
-            fallbacks: "default",
-            max_tokens: 64000,
-            system: [{ type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } }],
-            output_config: { effort: "medium", format: { type: "json_schema", schema: RESULT_SCHEMA } },
-            messages: [
-              { role: "user", content: userContent },
-              { role: "assistant", content: textBlock.text },
-              {
-                role: "user",
-                content: `El resultado anterior NO cuadra con los totales impresos por el banco. Depósitos del banco menos depósitos clasificados = ${gapsFirst.depositsDelta} (positivo = faltan ingresos o entradas). Retiros clasificados menos retiros del banco = ${gapsFirst.withdrawalsDelta} (positivo = sobran gastos). Revisa el extracto línea por línea y encuentra las transacciones faltantes, duplicadas o mal clasificadas. Recuerda: TODO el dinero que ENTRA a la cuenta (incluidas transferencias desde otras cuentas) va en REVENUES; nunca como gasto. Nunca inventes ni ajustes un monto para que cuadre. Devuelve el JSON COMPLETO corregido.`,
-              },
-            ],
-          }),
-        });
-        if (retryResponse.ok) {
-          const retryCompletion = await retryResponse.json();
-          const retryText = retryCompletion.stop_reason === "max_tokens"
-            ? null
-            : Array.isArray(retryCompletion.content)
-            ? retryCompletion.content.find((b: any) => b.type === "text")?.text
-            : null;
-          if (retryText) {
-            const candidate = JSON.parse(retryText);
-            const gapsRetry = reconcileGaps(candidate);
-            if (gapsRetry && gapsRetry.score < gapsFirst.score) {
-              candidate.accountInfo = parsed.accountInfo;
-              finalResult = candidate;
-            }
+    // From here the work takes a while (often more than a minute). The platform drops a request that
+    // has sent nothing for 150 s, so the answer starts streaming now: a space every few seconds keeps
+    // it alive (leading spaces are valid JSON) and the result, or a clear error, is written at the end.
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      async start(controller) {
+        const send = (chunk: string) => {
+          try {
+            controller.enqueue(encoder.encode(chunk));
+          } catch {
+            // the person closed the page; nothing to send to
           }
+        };
+        send(" ");
+        const keepAlive = setInterval(() => send(" "), 5000);
+        let payload: unknown;
+        try {
+          payload = await runAnalysis(ANTHROPIC_API_KEY, userContent, requestStartedAt);
+        } catch (error) {
+          console.error("analyze-statement error:", error);
+          payload = { error: userMessageFor(error) };
+        } finally {
+          clearInterval(keepAlive);
         }
-      } catch (retryError) {
-        console.error("analyze-statement verification retry failed:", retryError);
-      }
-    }
-    const gapsFinal = reconcileGaps(finalResult);
-    finalResult.verification = {
-      checked: gapsFinal !== null,
-      depositsDelta: gapsFinal?.depositsDelta ?? null,
-      withdrawalsDelta: gapsFinal?.withdrawalsDelta ?? null,
-      retried: finalResult !== parsed,
-    };
-
-    return new Response(JSON.stringify(finalResult), {
+        send(JSON.stringify(payload));
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      },
+    });
+    return new Response(body, {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("analyze-statement error:", error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
+    return new Response(JSON.stringify({ error: userMessageFor(error) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
