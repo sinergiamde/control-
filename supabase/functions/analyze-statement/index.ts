@@ -79,12 +79,13 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 - "Health / personal services"
 - "Meals (restaurant/bar)"
 - "Other personal (specify)"
+- "Transfer in (not income)"
 
 REGLA DE COMIDA (importante): comida rápida, café o snacks durante jornada laboral → OPEX con category "Meals (work — fast food/coffee/snacks)". Restaurantes o bares → PERSONAL con category "Meals (restaurant/bar)". En los campos "detail_en" y "detail_es" de cualquier transacción de comida, especifica (en cada idioma respectivamente) si el comercio es un restaurante/bar o un supermercado/tienda, y el nombre del comercio si aparece.
 
 REGLA DE TRANSFERENCIAS PERSONALES (importante): toda transferencia electrónica ("Online Transfer", "Electronic Withdrawal", transferencia a otra cuenta propia, etc.) sin justificación de negocio clara → PERSONAL con category "Personal bank transfer". En los campos "detail_en" y "detail_es" indica el destino/origen tal como aparece en el extracto (nombre del beneficiario, banco/cuenta destino, o "transfer to own account"/"transferencia a cuenta propia") — esto es indispensable para poder rastrear cada transferencia individualmente, ninguna puede quedar sin ese detalle.
 
-REGLA DE TRANSFERENCIAS ENTRANTES Y AVANCES DE LÍNEA DE CRÉDITO (importante, NUNCA la saltes): un DEPÓSITO que sea (a) una transferencia entrante desde otra cuenta del mismo dueño/negocio (ej. "Online Transfer... FROM ****XXXX", "In-Branch Transfer... FROM CHECKING...") o (b) un desembolso de una línea de crédito/crédito rotativo (ej. "Credit Line ADV", "Credit Line Advance") NUNCA es ingreso real del negocio — no es un cliente pagando, es dinero propio moviéndose de cuenta o deuda entrando, y contarlo como revenue infla el ingreso real. NUNCA lo clasifiques en revenues, aunque en el extracto aparezca junto a los demás depósitos y parezca una transferencia bancaria común. Clasifícalo en PERSONAL con category "Personal bank transfer" (igual que su contraparte saliente), y en "detail_en"/"detail_es" aclara que es una transferencia entre cuentas propias o un avance de línea de crédito, no un pago de cliente. (Un depósito identificado como "Incoming Wire Transfer" de un tercero SÍ sigue siendo revenue normal con category "Wire transfer" — esta regla solo aplica a transferencias entre cuentas del mismo dueño y a avances de línea de crédito, no a wires de terceros.)
+REGLA DE TRANSFERENCIAS ENTRANTES Y AVANCES DE LÍNEA DE CRÉDITO (importante, NUNCA la saltes): un DEPÓSITO que sea (a) una transferencia entrante desde otra cuenta del mismo dueño/negocio (ej. "Online Transfer... FROM ****XXXX", "In-Branch Transfer... FROM CHECKING...") o (b) un desembolso de una línea de crédito/crédito rotativo (ej. "Credit Line ADV", "Credit Line Advance") NUNCA es ingreso real del negocio — no es un cliente pagando, es dinero propio moviéndose de cuenta o deuda entrando, y contarlo como revenue infla el ingreso real. NUNCA lo clasifiques en revenues, aunque en el extracto aparezca junto a los demás depósitos y parezca una transferencia bancaria común. Clasifícalo en PERSONAL con category "Transfer in (not income)" (NUNCA "Personal bank transfer": esa categoría es solo para dinero que SALE de la cuenta; una transferencia ENTRANTE no es un gasto), y en "detail_en"/"detail_es" aclara que es una transferencia entre cuentas propias o un avance de línea de crédito, no un pago de cliente. (Un depósito identificado como "Incoming Wire Transfer" de un tercero SÍ sigue siendo revenue normal con category "Wire transfer" — esta regla solo aplica a transferencias entre cuentas del mismo dueño y a avances de línea de crédito, no a wires de terceros.)
 
 REGLA DE TARJETA DE CRÉDITO Y PRÉSTAMOS DE NEGOCIO (importante): un pago SALIENTE que sea (a) el pago del saldo/mínimo de una tarjeta de crédito (ej. "Credit Card Pmt", "Online Credit Card Pmt", "Payment to ****XXXX" ligado a un emisor de tarjeta) → OPEX con category "Credit card payment"; o (b) el pago de una cuota de un préstamo/línea de crédito de negocio, incluyendo pagos a una línea de crédito rotativa (ej. "Credit Line Pmt", "Loan Payment", "Business Loan Pmt", "SBA Loan") → OPEX con category "Business loan". No los confundas con un AVANCE/desembolso de línea de crédito (ese es un depósito y sigue la regla de arriba, nunca es gasto); esto aplica solo a PAGOS salientes que reducen la deuda.
 
@@ -93,6 +94,8 @@ REGLA DE DEVOLUCIONES Y REEMBOLSOS (importante, NUNCA la saltes): un DEPÓSITO/c
 Si algo no está claro, clasifícalo de todas formas en la categoría más probable (sin agregar una alerta individual por eso — las alertas se generan aparte, en el Paso 5, solo para patrones que de verdad importan).
 
 Pagos por Zelle deben listarse individualmente (uno por transacción), nunca agrupados en las tablas de revenues/cogs/opex/fees/personal — pero en "alerts" sí deben agruparse por patrón (ver Paso 5).
+
+CUADRE OBLIGATORIO CON EL BANCO (crítico: eres un analista financiero y de datos que no puede equivocarse con los números): antes de responder verifica con aritmética: (1) saldo inicial + depósitos totales − retiros totales = saldo final impreso por el banco; (2) la suma de TODAS las transacciones que ENTRAN a la cuenta (revenues + las de category "Transfer in (not income)") debe ser igual a los depósitos totales del banco; (3) la suma de TODAS las que SALEN (cogs + opex + fees + personal, sin contar las de category "Transfer in (not income)") debe ser igual a los retiros totales del banco. Si no cuadra, vuelve a revisar el extracto línea por línea hasta encontrar la transacción faltante, duplicada o mal clasificada. Nunca inventes ni ajustes un monto para que cuadre: copia cada número exactamente como lo imprime el banco.
 
 FIDELIDAD AL EXTRACTO (obligatorio): el reporte debe reflejar EXACTAMENTE lo que dice el extracto del banco. Cada línea del extracto aparece UNA SOLA VEZ en UNA SOLA categoría: nunca repitas una transacción en dos listas ni la dividas. Si el extracto muestra dos transacciones idénticas (misma fecha, monto y comercio), son dos transacciones reales: inclúyelas las dos. Copia fecha, descripción y monto exactamente como aparecen, sin redondear ni corregir.
 
@@ -122,16 +125,6 @@ PASO 7 — Busca en el extracto un recuadro de resumen impreso por el propio ban
   - Si el recuadro existe: "found"=true, y llena cada campo presente con el número exacto impreso.
   - Si un campo específico no aparece impreso por separado (ej. el banco no distingue "Retiros electrónicos" de otros retiros — usa "otherWithdrawals" para retiros que no encajen en las demás categorías del resumen del banco): usa -1 tanto en "instances" como en "amount" de ese campo — NUNCA uses 0, porque 0 significaría que el banco reportó cero.
   - Si el extracto no trae ningún recuadro de resumen del banco: "found"=false y usa -1 en TODOS los campos numéricos de "bankSummary".
-
-PASO 8 — Genera "accountInfo" con los datos de la CUENTA tal como los imprime el banco en el encabezado o en la primera página del extracto. Cópialos EXACTOS, nunca los calcules ni los infieras:
-  - "bankName": nombre del banco (ej. "Chase", "Bank of America"). "" si no aparece.
-  - "accountHolder": nombre del titular de la cuenta tal como aparece. "" si no aparece.
-  - "accountType": tipo de cuenta tal como aparece (ej. "Chase Total Business Checking"). "" si no aparece.
-  - "accountNumberLast4": SOLO los últimos 4 dígitos del número de cuenta (nunca el número completo). "" si no aparecen.
-  - "periodStart" y "periodEnd": fechas de inicio y fin del período del extracto en formato MM/DD/YYYY. "" si no aparecen.
-  - "beginningBalance": el saldo inicial / saldo anterior impreso por el banco ("Beginning Balance", "Previous Balance", "Opening Balance", "Saldo anterior", "Saldo inicial"). Puede ser negativo si la cuenta está sobregirada. Usa -999999999 (y no 0) si NO está impreso — 0 significaría que el banco reportó saldo cero.
-  - "endingBalance": el saldo final impreso por el banco ("Ending Balance", "Saldo final"). Mismo criterio: -999999999 si no está impreso.
-  Estos datos son independientes de "bankSummary": busca el saldo anterior en cualquier parte del extracto aunque no exista un recuadro de resumen.
 
 REGLAS OBLIGATORIAS:
 - No inventes transacciones que no estén en el documento.
@@ -242,24 +235,17 @@ const accountInfoSchema = {
   properties: {
     bankName: { type: "string" },
     accountHolder: { type: "string" },
-    accountType: { type: "string" },
     accountNumberLast4: { type: "string" },
-    periodStart: { type: "string" },
-    periodEnd: { type: "string" },
     beginningBalance: { type: "number" },
     endingBalance: { type: "number" },
   },
-  required: [
-    "bankName", "accountHolder", "accountType", "accountNumberLast4",
-    "periodStart", "periodEnd", "beginningBalance", "endingBalance",
-  ],
+  required: ["bankName", "accountHolder", "accountNumberLast4", "beginningBalance", "endingBalance"],
   additionalProperties: false,
 };
 
 const RESULT_SCHEMA = {
   type: "object",
   $defs: {
-    accountInfo: accountInfoSchema,
     lineItem: lineItemSchema,
     thirdPartyPayment: thirdPartyPaymentSchema,
     bankSummaryField: bankSummaryFieldSchema,
@@ -280,7 +266,6 @@ const RESULT_SCHEMA = {
     personal: { type: "array", items: { $ref: "#/$defs/lineItem" } },
     thirdPartyPayments: { type: "array", items: { $ref: "#/$defs/thirdPartyPayment" } },
     bankSummary: { $ref: "#/$defs/bankSummary" },
-    accountInfo: { $ref: "#/$defs/accountInfo" },
     insights_en: { type: "array", items: { type: "string" } },
     insights_es: { type: "array", items: { type: "string" } },
     alerts_en: { type: "array", items: { type: "string" } },
@@ -289,7 +274,7 @@ const RESULT_SCHEMA = {
   },
   required: [
     "company", "period", "period_en", "period_es", "industry", "annualYear",
-    "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments", "bankSummary", "accountInfo",
+    "revenues", "cogs", "opex", "fees", "personal", "thirdPartyPayments", "bankSummary",
     "insights_en", "insights_es", "alerts_en", "alerts_es", "annualSummary",
   ],
   additionalProperties: false,
@@ -311,6 +296,41 @@ const xlsxToText = (b64: string) => {
   return parts.join("\n\n");
 };
 
+const TRANSFER_IN_CATEGORY = "Transfer in (not income)";
+
+const moneyNumber = (v: unknown) => {
+  const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? Math.abs(n) : 0;
+};
+const sumAmounts = (list: unknown) =>
+  (Array.isArray(list) ? list : []).reduce((s: number, it: any) => s + moneyNumber(it?.amt), 0);
+const printed = (n: unknown): number | null => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
+
+// How far the classified transactions are from the totals the bank itself printed (null when the
+// statement has no usable summary). deposits: bank - classified; withdrawals: classified - bank.
+const reconcileGaps = (r: any) => {
+  const b = r?.bankSummary;
+  if (!b?.found) return null;
+  const deposits = printed(b.deposits?.amount);
+  if (deposits === null) return null;
+  const parts = [b.checksPaid, b.atmDebitWithdrawals, b.electronicWithdrawals, b.otherWithdrawals].map((p: any) => printed(p?.amount));
+  const opening = printed(b.beginningBalance);
+  const closing = printed(b.endingBalance);
+  const bankOut = parts.every((p) => p !== null)
+    ? (parts as number[]).reduce((s, v) => s + v, 0)
+    : opening !== null && closing !== null
+    ? opening + deposits - closing
+    : null;
+  if (bankOut === null) return null;
+  const personal = Array.isArray(r.personal) ? r.personal : [];
+  const transfers = personal.filter((it: any) => it?.category === TRANSFER_IN_CATEGORY);
+  const classifiedIn = sumAmounts(r.revenues) + sumAmounts(transfers);
+  const classifiedOut = sumAmounts(r.cogs) + sumAmounts(r.opex) + sumAmounts(r.fees) + sumAmounts(personal) - sumAmounts(transfers);
+  const depositsDelta = Math.round((deposits - classifiedIn) * 100) / 100;
+  const withdrawalsDelta = Math.round((classifiedOut - bankOut) * 100) / 100;
+  return { depositsDelta, withdrawalsDelta, score: Math.abs(depositsDelta) + Math.abs(withdrawalsDelta) };
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -320,6 +340,7 @@ serve(async (req) => {
     // This call runs a full statement analysis through Claude — real per-call cost. Requiring a
     // logged-in user (not just the public anon key any visitor can read from the built JS bundle)
     // stops anyone off the internet from scripting free/unlimited analyses on our AI budget.
+    const requestStartedAt = Date.now();
     const authHeader = req.headers.get("Authorization") || "";
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -385,21 +406,54 @@ serve(async (req) => {
       ];
     }
 
+    // Account details come from a second, tiny request running in parallel: the main schema is already
+    // at the provider's grammar size limit, so adding fields there makes the whole analysis fail.
+    const accountPromise = fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "server-side-fallback-2026-07-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-opus-5-5",
+        fallbacks: "default",
+        max_tokens: 4000,
+        system: `Lees extractos bancarios. Extrae SOLO los datos de la cuenta tal como los imprime el banco en el encabezado o primera página; cópialos exactos, nunca los calcules ni los infieras:
+- bankName: nombre del banco ("" si no aparece).
+- accountHolder: titular de la cuenta tal como aparece ("" si no aparece).
+- accountNumberLast4: SOLO los últimos 4 dígitos del número de cuenta, nunca el número completo ("" si no aparecen).
+- beginningBalance: saldo inicial / anterior impreso ("Beginning Balance", "Previous Balance", "Opening Balance", "Saldo anterior"); puede ser negativo si hay sobregiro. Usa -999999999 (nunca 0) si NO está impreso.
+- endingBalance: saldo final impreso ("Ending Balance", "Saldo final"). Usa -999999999 si NO está impreso.`,
+        output_config: { effort: "low", format: { type: "json_schema", schema: accountInfoSchema } },
+        messages: [{ role: "user", content: userContent }],
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => {
+        const text = Array.isArray(c?.content) ? c.content.find((b: any) => b.type === "text")?.text : null;
+        return text ? JSON.parse(text) : null;
+      })
+      .catch(() => null);
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
+        "anthropic-beta": "server-side-fallback-2026-07-01",
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 32000,
+        model: "claude-opus-5-5",
+        fallbacks: "default",
+        max_tokens: 64000,
         system: [
           { type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } },
         ],
-        thinking: { type: "disabled" },
         output_config: {
+          effort: "medium",
           format: { type: "json_schema", schema: RESULT_SCHEMA },
         },
         messages: [{ role: "user", content: userContent }],
@@ -409,7 +463,7 @@ serve(async (req) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("analyze-statement Anthropic error:", response.status, errorText);
-      return new Response(JSON.stringify({ error: "El análisis con IA falló." }), {
+      return new Response(JSON.stringify({ error: "El análisis con IA falló.", detail: `${response.status}: ${errorText.slice(0, 400)}` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -442,8 +496,68 @@ serve(async (req) => {
     }
 
     const parsed = JSON.parse(textBlock.text);
+    parsed.accountInfo = (await accountPromise) ?? null;
 
-    return new Response(JSON.stringify(parsed), {
+    // Self-check against the bank's own totals. If the classified transactions don't add up to what the
+    // bank printed, ask the model once to find what is missing or misfiled, and keep whichever result
+    // reconciles better. Skipped when the first pass already took long (to stay under the time limit).
+    let finalResult: any = parsed;
+    const gapsFirst = reconcileGaps(parsed);
+    if (gapsFirst && gapsFirst.score > 1 && Date.now() - requestStartedAt < 75000) {
+      try {
+        const retryResponse = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "server-side-fallback-2026-07-01",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "claude-opus-5-5",
+            fallbacks: "default",
+            max_tokens: 64000,
+            system: [{ type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } }],
+            output_config: { effort: "medium", format: { type: "json_schema", schema: RESULT_SCHEMA } },
+            messages: [
+              { role: "user", content: userContent },
+              { role: "assistant", content: textBlock.text },
+              {
+                role: "user",
+                content: `El resultado anterior NO cuadra con los totales impresos por el banco. Depósitos del banco menos depósitos clasificados = ${gapsFirst.depositsDelta} (positivo = faltan ingresos o entradas). Retiros clasificados menos retiros del banco = ${gapsFirst.withdrawalsDelta} (positivo = sobran gastos). Revisa el extracto línea por línea y encuentra las transacciones faltantes, duplicadas o mal clasificadas. Recuerda: el dinero que ENTRA desde otras cuentas propias o por avances de línea de crédito va en PERSONAL con category "Transfer in (not income)". Nunca inventes ni ajustes un monto para que cuadre. Devuelve el JSON COMPLETO corregido.`,
+              },
+            ],
+          }),
+        });
+        if (retryResponse.ok) {
+          const retryCompletion = await retryResponse.json();
+          const retryText = retryCompletion.stop_reason === "max_tokens"
+            ? null
+            : Array.isArray(retryCompletion.content)
+            ? retryCompletion.content.find((b: any) => b.type === "text")?.text
+            : null;
+          if (retryText) {
+            const candidate = JSON.parse(retryText);
+            const gapsRetry = reconcileGaps(candidate);
+            if (gapsRetry && gapsRetry.score < gapsFirst.score) {
+              candidate.accountInfo = parsed.accountInfo;
+              finalResult = candidate;
+            }
+          }
+        }
+      } catch (retryError) {
+        console.error("analyze-statement verification retry failed:", retryError);
+      }
+    }
+    const gapsFinal = reconcileGaps(finalResult);
+    finalResult.verification = {
+      checked: gapsFinal !== null,
+      depositsDelta: gapsFinal?.depositsDelta ?? null,
+      withdrawalsDelta: gapsFinal?.withdrawalsDelta ?? null,
+      retried: finalResult !== parsed,
+    };
+
+    return new Response(JSON.stringify(finalResult), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

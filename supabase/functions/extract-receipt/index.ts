@@ -92,14 +92,16 @@ serve(async (req) => {
       headers: {
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
+        "anthropic-beta": "server-side-fallback-2026-07-01",
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 1024,
+        model: "claude-opus-5-5",
+        fallbacks: "default",
+        max_tokens: 4000,
         system: SYSTEM_PROMPT,
-        thinking: { type: "disabled" },
         output_config: {
+          effort: "low",
           format: { type: "json_schema", schema: RECEIPT_SCHEMA },
         },
         messages: [{ role: "user", content: [fileBlock, { type: "text", text: "Extrae los datos de este recibo." }] }],
