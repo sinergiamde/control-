@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Building2, ChevronRight, CornerDownRight, Crown, KeyRound, LayoutDashboard, LogOut, Menu, Moon, Receipt, Settings as SettingsIcon,
+  Building2, ChevronRight, CornerDownRight, Crown, FileText, KeyRound, LayoutDashboard, LogOut, Menu, Moon, Receipt, Settings as SettingsIcon,
   Search, ShieldCheck, Sparkles, Sun, Users, X,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -111,7 +111,7 @@ const AppLayout = () => {
       "/dashboard": tr(STR.generalDashboardNav, isEnglish),
       "/clients": t("clientsNav"),
       "/results": tr(STR.analyzeTitle, isEnglish),
-      "/history": tr(STR.savedReportsTitle, isEnglish),
+      "/history": tr(STR.statementsNav, isEnglish),
       "/admin": tr(STR.usersAndPermissionsNav, isEnglish),
       "/admin/users": tr(isAdmin ? STR.hubUsersTitle : STR.authorizedUsersNav, isEnglish),
       "/admin/permissions": tr(STR.hubRolesTitle, isEnglish),
@@ -174,6 +174,14 @@ const AppLayout = () => {
           <button type="button" onClick={() => go("/dashboard")} className={linkClass(location.pathname === "/dashboard")}>
             <LayoutDashboard className="h-4 w-4 shrink-0" />
             <span className="truncate">{tr(STR.generalDashboardNav, isEnglish)}</span>
+          </button>
+          <button type="button" onClick={() => go("/history")} className={linkClass(location.pathname === "/history")}>
+            <FileText className="h-4 w-4 shrink-0" />
+            <span className="truncate">{tr(STR.statementsNav, isEnglish)}</span>
+          </button>
+          <button type="button" onClick={() => go("/receipts")} className={linkClass(location.pathname === "/receipts")}>
+            <Receipt className="h-4 w-4 shrink-0" />
+            <span className="truncate">{tr(STR.receiptsNav, isEnglish)}</span>
           </button>
 
           <div className="flex items-center">

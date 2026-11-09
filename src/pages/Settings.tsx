@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Eye, EyeOff, Globe, KeyRound, Loader2, Mail, Moon, Palette, Save, Settings as SettingsIcon, Sparkles, Sun, Trash2, User as UserIcon } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Camera, ChevronRight, Eye, EyeOff, FileText, Globe, KeyRound, Loader2, Mail, Moon, Palette, Save, Settings as SettingsIcon, Sparkles, Sun, Trash2, User as UserIcon } from "lucide-react";
 import UserAvatar from "@/components/UserAvatar";
 import { FlagIcon } from "@/components/FlagIcon";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,8 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { STR, tr } from "@/utils/i18n";
+import { STR, tr, pickText } from "@/utils/i18n";
+import { fetchClientNodes } from "@/utils/clientTree";
 import { sendPasswordRecovery } from "@/utils/recovery";
 
 const MIN_PASSWORD = 8;
@@ -36,6 +38,83 @@ const resizeToSquare = (file: File): Promise<Blob> =>
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image")); };
     img.src = url;
   });
+
+interface MyAnalysis {
+  id: string;
+  client_id: string | null;
+  period: string | null;
+  original_filename: string | null;
+  created_at: string;
+  full_analysis: any;
+}
+
+/** The person's own analyzed statements, newest first — their history inside Settings. */
+const MyAnalysesCard = () => {
+  const { lang } = useLanguage();
+  const isEnglish = lang === "en";
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [rows, setRows] = useState<MyAnalysis[]>([]);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const [{ data }, nodes] = await Promise.all([
+        supabase
+          .from("analyses")
+          .select("id, client_id, period, original_filename, created_at, full_analysis")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(8),
+        fetchClientNodes(),
+      ]);
+      setRows((data as MyAnalysis[]) || []);
+      setNames(new Map(nodes.map((n) => [n.id, n.name])));
+      setLoaded(true);
+    })();
+  }, [user]);
+
+  return (
+    <Card className="neon-border bg-card">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileText className="h-4 w-4 text-primary" />
+            {tr(STR.myAnalysesTitle, isEnglish)}
+          </CardTitle>
+          <button type="button" onClick={() => navigate("/history")} className="text-xs text-primary font-medium hover:underline">
+            {tr(STR.viewAllWord, isEnglish)}
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">{tr(STR.myAnalysesDesc, isEnglish)}</p>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {loaded && rows.length === 0 && <p className="text-sm text-muted-foreground py-2">{tr(STR.noAnalysesYet, isEnglish)}</p>}
+        {rows.map((r) => {
+          const src = r.full_analysis?.analysis ?? r.full_analysis;
+          return (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => navigate("/results", { state: { results: r.full_analysis, analysisId: r.id, clientId: r.client_id } })}
+              className="w-full flex items-center justify-between gap-3 rounded-md px-2 py-2 text-left hover:bg-muted/50 transition-colors"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{(r.client_id && names.get(r.client_id)) || "—"}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {pickText(src, "period", isEnglish) || r.period || "—"} · {r.original_filename || "—"}
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </button>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+};
 
 /** TaxForYou admins only: where the "Subscribe" button sends people once their trial ends. */
 const SubscriptionSettingsCard = () => {
@@ -287,6 +366,8 @@ const Settings = () => {
           </div>
         </CardContent>
       </Card>
+
+      <MyAnalysesCard />
 
       {/* Account email (read-only: it's the email the person registered with) */}
       <Card className="neon-border bg-card">
