@@ -22,8 +22,9 @@ import {
   statementTxns, txnOptionValue, type ReceiptRow, type StatementTxn,
 } from "@/utils/receipts";
 import type { StatementRow } from "@/utils/statementPeriod";
+import { SUPABASE_URL } from "@/integrations/supabase/config";
 
-const EXTRACT_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-receipt`;
+const EXTRACT_API_URL = `${SUPABASE_URL}/functions/v1/extract-receipt`;
 const NO_LINK = "__none__";
 const ALL_CLIENTS = "__all__";
 type Field = "date" | "merchant" | "amount" | "tax";

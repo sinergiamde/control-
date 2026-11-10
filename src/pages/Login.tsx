@@ -99,13 +99,16 @@ const Login = () => {
     setSubmitting(true);
 
     if (isRegister) {
-      const { error } = await register(form.email, form.password, {
+      const { error, signedIn } = await register(form.email, form.password, {
         name: form.name,
         phone: form.phone,
         country: form.country,
       });
       if (error) {
         toast({ title: "Error", description: error, variant: "destructive" });
+      } else if (signedIn) {
+        toast({ title: t("accountCreated"), className: "border-primary text-primary" });
+        navigate("/analyze");
       } else {
         toast({
           title: t("checkEmail"),

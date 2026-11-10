@@ -333,12 +333,13 @@ const reconcileGaps = (r: any) => {
 // Statements run on Claude Sonnet 5 with thinking off: it reads a whole statement reliably and fast
 // enough for long statements. A slower model would hit the platform's time limit more often.
 const STATEMENT_MODEL = "claude-sonnet-5";
-// The platform stops a function at its wall-clock limit (400 s). Every AI call is aborted before
-// that, so the person always gets an answer instead of a dropped connection.
-const DEADLINE_MS = 330_000;
+// The platform stops a function at its wall-clock limit (150 s on Supabase Free, 400 s on paid
+// plans). Every AI call is aborted before that, so the person always gets an answer instead of a
+// dropped connection. On a paid plan raise ANALYZE_DEADLINE_MS (e.g. 330000) in the function secrets.
+const DEADLINE_MS = Number(Deno.env.get("ANALYZE_DEADLINE_MS") || 140_000);
 // The bank-reconciliation second pass takes about as long as the first one: only start it when
-// both fit comfortably before the deadline.
-const RETRY_ONLY_BEFORE_MS = 120_000;
+// both fit before the deadline (about a third of it).
+const RETRY_ONLY_BEFORE_MS = Number(Deno.env.get("ANALYZE_RETRY_BEFORE_MS") || Math.round(DEADLINE_MS / 3));
 
 const ACCOUNT_INFO_PROMPT = `Lees extractos bancarios. Extrae SOLO los datos de la cuenta tal como los imprime el banco en el encabezado o primera página; cópialos exactos, nunca los calcules ni los infieras:
 - bankName: nombre del banco ("" si no aparece).

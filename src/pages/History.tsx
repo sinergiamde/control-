@@ -20,6 +20,7 @@ import { normalizePeriod } from "@/utils/normalizePeriod";
 import { STR, tr, translateCategory, pickText } from "@/utils/i18n";
 import { ClientCombobox, type ClientOption } from "@/components/ClientCombobox";
 import { fetchClientNodes, clientPathLabel, clientWithSubIds, type ClientNode } from "@/utils/clientTree";
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/integrations/supabase/config";
 
 interface AnalysisRow {
   id: string;
@@ -269,11 +270,11 @@ const History = () => {
     }
     setGeneratingAnnual(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/annual-summary`, {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/annual-summary`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session?.access_token || SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({ year: Number(range), client_id: clientFilter.id }),
       });

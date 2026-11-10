@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageCircle, X, Send, Loader2, Bot, User, Sparkles } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/integrations/supabase/config";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/financial-advisor`;
+const CHAT_URL = `${SUPABASE_URL}/functions/v1/financial-advisor`;
 
 const suggestionsEN = [
   "How can I save more money?",
@@ -66,7 +67,7 @@ const ChatBot = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session?.access_token || SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({ messages: allMessages, lang }),
       });

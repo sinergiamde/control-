@@ -49,7 +49,7 @@ interface AuthContextType {
   canUpload: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ error: string | null }>;
-  register: (email: string, password: string, meta: { name: string; phone: string; country: string }) => Promise<{ error: string | null }>;
+  register: (email: string, password: string, meta: { name: string; phone: string; country: string }) => Promise<{ error: string | null; signedIn: boolean }>;
   logout: () => Promise<void>;
   /** Re-reads the profile after the user edits it (name, photo) so the sidebar updates at once. */
   refreshProfile: () => Promise<void>;
@@ -153,7 +153,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const register = async (email: string, password: string, meta: { name: string; phone: string; country: string }) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -161,7 +161,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         emailRedirectTo: window.location.origin,
       },
     });
-    return { error: error?.message ?? null };
+    // When the project doesn't require email confirmation, sign-up already signs the person in.
+    return { error: error?.message ?? null, signedIn: !!data?.session };
   };
 
   const refreshProfile = async () => {

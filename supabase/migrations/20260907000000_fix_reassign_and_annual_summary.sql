@@ -22,7 +22,7 @@ BEGIN
     ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
   WHERE tc.table_schema = 'public' AND tc.table_name = 'annual_summaries' AND tc.constraint_type = 'UNIQUE'
   GROUP BY tc.constraint_name
-  HAVING array_agg(ccu.column_name ORDER BY ccu.column_name) = ARRAY['user_id', 'year']::text[]
+  HAVING array_agg(ccu.column_name::text ORDER BY ccu.column_name) = ARRAY['user_id', 'year']::text[]
   LIMIT 1;
 
   IF cname IS NOT NULL THEN

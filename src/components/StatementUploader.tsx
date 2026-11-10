@@ -12,8 +12,9 @@ import ClientChoice, { NEW_CLIENT, initialClientChoice, resolveClientChoice } fr
 import { UploadLockedCard, useTrialStatus } from "@/components/SubscribePrompt";
 import { STR, tr } from "@/utils/i18n";
 import { normalizeAnalysisTransactions } from "@/utils/reportTypes";
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/integrations/supabase/config";
 
-const ANALYZE_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-statement`;
+const ANALYZE_API_URL = `${SUPABASE_URL}/functions/v1/analyze-statement`;
 const ACCEPTED_EXTENSIONS = [".pdf", ".csv", ".xlsx", ".xls"];
 
 const fileToBase64 = (file: File, couldNotReadMsg: string) =>
@@ -164,7 +165,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session?.access_token || SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
           fileBase64,
