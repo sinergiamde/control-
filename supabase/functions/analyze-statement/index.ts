@@ -330,9 +330,20 @@ const reconcileGaps = (r: any) => {
   return { depositsDelta, withdrawalsDelta, score: Math.abs(depositsDelta) + Math.abs(withdrawalsDelta) };
 };
 
-// Statements run on Claude Sonnet 5 with thinking off: it reads a whole statement reliably and fast
-// enough for long statements. A slower model would hit the platform's time limit more often.
-const STATEMENT_MODEL = "claude-sonnet-5";
+// Model that classifies statements, set with the ANALYZE_MODEL secret (default Claude Sonnet 5 with
+// thinking off: fast enough for long statements on the Free plan's 150 s limit). Claude Opus 5.5
+// always thinks, so it gets an effort level (ANALYZE_EFFORT, default "low") and room for its thinking.
+const STATEMENT_MODEL = Deno.env.get("ANALYZE_MODEL") || "claude-sonnet-5";
+const THINKING_OFF = STATEMENT_MODEL === "claude-sonnet-5";
+const modelSettings = (schema: unknown, maxTokens: number) =>
+  THINKING_OFF
+    ? { model: STATEMENT_MODEL, max_tokens: maxTokens, thinking: { type: "disabled" }, output_config: { format: { type: "json_schema", schema } } }
+    : {
+        model: STATEMENT_MODEL,
+        max_tokens: Math.max(maxTokens * 2, 4000),
+        fallbacks: "default",
+        output_config: { effort: Deno.env.get("ANALYZE_EFFORT") || "low", format: { type: "json_schema", schema } },
+      };
 // The platform stops a function at its wall-clock limit (150 s on Supabase Free, 400 s on paid
 // plans). Every AI call is aborted before that, so the person always gets an answer instead of a
 // dropped connection. On a paid plan raise ANALYZE_DEADLINE_MS (e.g. 330000) in the function secrets.
@@ -378,7 +389,12 @@ const callClaude = async (apiKey: string, body: Record<string, unknown>, deadlin
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        ...("fallbacks" in body ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {}),
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -397,11 +413,8 @@ const runAnalysis = async (apiKey: string, userContent: unknown[], startedAt: nu
   // Account details come from a second, tiny request running in parallel: the main schema is already
   // at the provider's grammar size limit, so adding fields there makes the whole analysis fail.
   const accountPromise = callClaude(apiKey, {
-    model: STATEMENT_MODEL,
-    max_tokens: 600,
-    thinking: { type: "disabled" },
+    ...modelSettings(accountInfoSchema, 600),
     system: ACCOUNT_INFO_PROMPT,
-    output_config: { format: { type: "json_schema", schema: accountInfoSchema } },
     messages: [{ role: "user", content: userContent }],
   }, deadlineAt)
     .then((r) => (r.ok ? firstText(JSON.parse(r.text)) : null))
@@ -409,11 +422,8 @@ const runAnalysis = async (apiKey: string, userContent: unknown[], startedAt: nu
     .catch(() => null);
 
   const mainRequest = {
-    model: STATEMENT_MODEL,
-    max_tokens: 32000,
-    thinking: { type: "disabled" },
+    ...modelSettings(RESULT_SCHEMA, 32000),
     system: [{ type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } }],
-    output_config: { format: { type: "json_schema", schema: RESULT_SCHEMA } },
     messages: [{ role: "user", content: userContent }],
   };
 
@@ -478,6 +488,7 @@ const runAnalysis = async (apiKey: string, userContent: unknown[], startedAt: nu
     depositsDelta: gapsFinal?.depositsDelta ?? null,
     withdrawalsDelta: gapsFinal?.withdrawalsDelta ?? null,
     retried: finalResult !== parsed,
+    model: STATEMENT_MODEL,
   };
   return finalResult;
 };
