@@ -526,7 +526,8 @@ serve(async (req) => {
 
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
+      console.error("analyze-statement: ANTHROPIC_API_KEY is not configured");
+      throw new UserFacingError("El servidor todavía no tiene configurada la clave de la IA. Avísale al administrador.");
     }
 
     const normalizedType = String(mediaType || "").toLowerCase();
