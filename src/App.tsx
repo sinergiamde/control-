@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Analyze from "./pages/Analyze";
 import Receipts from "./pages/Receipts";
 import Results from "./pages/Results";
+import BalanceSheet from "./pages/BalanceSheet";
 import Admin from "./pages/Admin";
 import AdminHub from "./pages/AdminHub";
 import Permissions from "./pages/Permissions";
@@ -44,6 +45,7 @@ const App = () => (
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/:clientId" element={<ClientDashboard />} />
                 <Route path="/results" element={<Results />} />
+                <Route path="/balance" element={<BalanceSheet />} />
                 <Route path="/history" element={<History />} />
                 <Route path="/admin" element={<AdminHub />} />
                 <Route path="/admin/users" element={<Admin />} />

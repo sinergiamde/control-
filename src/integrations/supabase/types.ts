@@ -74,6 +74,33 @@ export type Database = {
           },
         ]
       }
+      balance_sheets: {
+        Row: {
+          as_of: string
+          client_id: string
+          id: string
+          items: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          as_of: string
+          client_id: string
+          id?: string
+          items?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          as_of?: string
+          client_id?: string
+          id?: string
+          items?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       annual_summaries: {
         Row: {
           categories: Json
