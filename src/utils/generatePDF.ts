@@ -131,8 +131,8 @@ function renderExecutiveSummary(doc: jsPDF, pageWidth: number, data: ResultsData
   if (bank?.found) {
     const withdrawals = totalBankWithdrawals(bank);
     const rows: [string, number][] = ([
-      [tr(STR.beginningBalance, isEnglish), bank.beginningBalance],
-      [tr(STR.endingBalance, isEnglish), bank.endingBalance],
+      [data.balanceLabels?.beginning || tr(STR.beginningBalance, isEnglish), bank.beginningBalance],
+      [data.balanceLabels?.ending || tr(STR.endingBalance, isEnglish), bank.endingBalance],
       [tr(STR.totalDeposits, isEnglish), bank.deposits.amount],
       [tr(STR.totalWithdrawals, isEnglish), withdrawals],
     ] as [string, number | null][]).filter((r): r is [string, number] => r[1] !== null);

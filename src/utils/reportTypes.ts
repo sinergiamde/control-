@@ -326,6 +326,9 @@ export interface ResultsData {
   thirdPartyBuckets?: ThirdPartyBuckets;
   bankSummary?: BankSummary;
   reconciliation?: ReconciliationResult;
+  /** Labels for the two balances with the date each one refers to ("Saldo Inicial al 31 de diciembre
+   * de 2024"), used by the PDF/Excel exports; absent when the statement's dates are unknown. */
+  balanceLabels?: { beginning: string; ending: string };
 }
 
 export const FOOD_OPEX_CATEGORY = "Meals (work — fast food/coffee/snacks)";

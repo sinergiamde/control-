@@ -228,6 +228,10 @@ export const STR = {
 
   // Results.tsx page chrome
   profitLoss: { en: "Profit & Loss", es: "Estado de Resultados" },
+  profitLossNav: { en: "Profit & Loss (P&L)", es: "Estado de resultados (P&L)" },
+  showPnlOf: { en: "Showing:", es: "Ver estado de:" },
+  consolidatedReport: { en: "Consolidated report", es: "Reporte consolidado" },
+  loadingStatement: { en: "Loading the profit & loss…", es: "Cargando el estado de resultados…" },
   noDataTitle: { en: "No data to display", es: "No hay datos para mostrar" },
   noDataDesc: { en: "Upload a document from the Dashboard to generate your P&L report.", es: "Sube un documento desde el Panel para generar tu reporte P&L." },
   reconciledBanner: {

@@ -13,7 +13,7 @@ import {
   DollarSign, TrendingUp, Receipt, ArrowLeft, Download, ChevronDown,
   ChevronUp, AlertTriangle, BarChart3, PieChart, Wallet, CreditCard,
   Building2, UtensilsCrossed, Car, ShoppingBag, Zap, Target, FileSpreadsheet, FileText,
-  CheckCircle2, Users, Pencil, Loader2,
+  CheckCircle2, Users, Pencil, Loader2, Sparkles,
 } from "lucide-react";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
@@ -36,6 +36,7 @@ import { STR, tr, translateCategory, pickText, pickArray } from "@/utils/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { openReceiptFile, receiptTxnKey, txnKey, type ReceiptRow } from "@/utils/receipts";
+import { balanceDates, balanceLabel } from "@/utils/balanceDates";
 
 interface LineItem {
   name: string;
@@ -90,6 +91,7 @@ interface ResultsData {
   thirdPartyBuckets?: ThirdPartyBuckets;
   bankSummary?: BankSummary;
   reconciliation?: ReconciliationResult;
+  balanceLabels?: { beginning: string; ending: string };
 }
 
 const normalizeThirdParty = (items: any[] = [], isEnglish = true): ThirdPartyPayment[] =>
@@ -580,6 +582,15 @@ const results0Bank = (source: any, key: "beginningBalance" | "endingBalance"): n
   return bank.found ? bank[key] : null;
 };
 
+interface StatementOption {
+  id: string;
+  client_id: string | null;
+  period: string | null;
+  created_at: string;
+  original_filename: string | null;
+  clients: { name: string } | null;
+}
+
 const Results = () => {
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
@@ -588,13 +599,55 @@ const Results = () => {
   const location = useLocation();
   const { toast } = useToast();
 
-  const analysisId = (location.state as any)?.analysisId as string | undefined;
-  const clientId = ((location.state as any)?.clientId as string | undefined) ?? null;
-  const [rawResults, setRawResults] = useState<any>((location.state as any)?.results);
+  const navState = (location.state as any) || {};
+  const [analysisId, setAnalysisId] = useState<string | undefined>(navState.analysisId);
+  const [clientId, setClientId] = useState<string | null>(navState.clientId ?? null);
+  const [rawResults, setRawResults] = useState<any>(navState.results);
+  // Every statement this person can see, newest first, for the "show the P&L of" picker. Opening the
+  // page from the menu (no statement chosen) shows the newest one.
+  const [statements, setStatements] = useState<StatementOption[] | null>(null);
+  const [openingStatement, setOpeningStatement] = useState(false);
   const [reassignItem, setReassignItem] = useState<LineItem | null>(null);
   const [reassignTarget, setReassignTarget] = useState<string>("");
   const [savingReassign, setSavingReassign] = useState(false);
   const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
+
+  // A new visit to /results (from a statement, a client, or the menu) replaces what is shown.
+  useEffect(() => {
+    const st = (location.state as any) || {};
+    setAnalysisId(st.analysisId);
+    setClientId(st.clientId ?? null);
+    setRawResults(st.results);
+  }, [location.key]);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("analyses")
+      .select("id, client_id, period, created_at, original_filename, clients(name)")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setStatements((data as unknown as StatementOption[]) || []));
+  }, [user]);
+
+  const openStatement = async (id: string) => {
+    setOpeningStatement(true);
+    const { data, error } = await supabase.from("analyses").select("id, client_id, full_analysis").eq("id", id).maybeSingle();
+    setOpeningStatement(false);
+    if (error || !data) {
+      toast({ title: "Error", description: error?.message || tr(STR.noDataTitle, isEnglish), variant: "destructive" });
+      return;
+    }
+    setRawResults(data.full_analysis);
+    setAnalysisId(data.id);
+    setClientId(data.client_id);
+  };
+
+  useEffect(() => {
+    if (!rawResults && !analysisId && statements && statements.length > 0 && !openingStatement) {
+      openStatement(statements[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statements, rawResults, analysisId]);
 
   // Receipts linked to this statement's transactions, shown next to each one (and in the exports).
   useEffect(() => {
@@ -611,6 +664,15 @@ const Results = () => {
     return null;
   }
 
+  if (!rawResults && (statements === null || openingStatement || (statements.length > 0 && !analysisId))) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground gap-2 text-sm">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        {tr(STR.loadingStatement, isEnglish)}
+      </div>
+    );
+  }
+
   if (!rawResults) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -622,9 +684,9 @@ const Results = () => {
               <p className="text-muted-foreground text-sm mb-6">
                 {tr(STR.noDataDesc, isEnglish)}
               </p>
-              <Button onClick={() => navigate(clientId ? `/clients/${clientId}` : "/clients")} className="neon-glow">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                {t("backToDashboard")}
+              <Button onClick={() => navigate("/analyze")} className="neon-glow">
+                <Sparkles className="h-4 w-4 mr-2" />
+                {tr(STR.analyzeNav, isEnglish)}
               </Button>
             </CardContent>
           </Card>
@@ -654,6 +716,9 @@ const Results = () => {
       hasAnyMissing: beginning === null || ending === null || !info.bankName || !info.last4,
     };
   })();
+  const dates = balanceDates(rawResults);
+  const beginningLabel = balanceLabel(tr(STR.beginningBalance, isEnglish), dates.beginning, isEnglish);
+  const endingLabel = balanceLabel(tr(STR.endingBalance, isEnglish), dates.ending, isEnglish);
   const fmtBalance = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
 
   const receiptByKey = new Map(receipts.map((r) => [receiptTxnKey(r), r]));
@@ -670,8 +735,9 @@ const Results = () => {
     })),
   };
   // PDF / Excel have no chip to click: the backing receipt goes into the line's detail instead.
-  const exportResults: ResultsData = receipts.length === 0 ? results : {
+  const exportResults: ResultsData = receipts.length === 0 ? { ...results, balanceLabels: { beginning: beginningLabel, ending: endingLabel } } : {
     ...results,
+    balanceLabels: { beginning: beginningLabel, ending: endingLabel },
     sections: results.sections.map((section) => ({
       ...section,
       items: section.items.map((item) =>
@@ -788,6 +854,23 @@ const Results = () => {
             {results.period && (
               <p className="text-muted-foreground text-xs mt-0.5">{results.period}</p>
             )}
+            {statements && statements.length > 0 && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground shrink-0">{tr(STR.showPnlOf, isEnglish)}</span>
+                <Select value={analysisId ?? ""} onValueChange={(id) => openStatement(id)}>
+                  <SelectTrigger className="h-8 w-[min(22rem,70vw)] text-xs">
+                    <SelectValue placeholder={tr(STR.consolidatedReport, isEnglish)} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statements.map((st) => (
+                      <SelectItem key={st.id} value={st.id} className="text-xs">
+                        {(st.clients?.name || tr(STR.noClientLabel, isEnglish)) + " — " + (st.period || st.original_filename || new Date(st.created_at).toLocaleDateString())}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
             <Button variant="outline" onClick={() => navigate(clientId ? `/clients/${clientId}` : "/clients")}
@@ -830,7 +913,7 @@ const Results = () => {
             </div>
             <div className="grid grid-cols-3 gap-3 text-center border-t border-border pt-4">
               <div>
-                <p className="text-xs text-muted-foreground">{tr(STR.beginningBalance, isEnglish)}</p>
+                <p className="text-xs text-muted-foreground">{beginningLabel}</p>
                 <p className={`text-lg font-bold ${account.beginning === null ? "text-muted-foreground/60 text-sm font-normal" : "text-foreground"}`}>
                   {account.beginning === null ? tr(STR.notReadFromStatement, isEnglish) : fmtBalance(account.beginning)}
                 </p>
@@ -842,7 +925,7 @@ const Results = () => {
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">{tr(STR.endingBalance, isEnglish)}</p>
+                <p className="text-xs text-muted-foreground">{endingLabel}</p>
                 <p className={`text-lg font-bold ${account.ending === null ? "text-muted-foreground/60 text-sm font-normal" : "text-foreground"}`}>
                   {account.ending === null ? tr(STR.notReadFromStatement, isEnglish) : fmtBalance(account.ending)}
                 </p>

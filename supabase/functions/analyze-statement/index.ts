@@ -237,8 +237,10 @@ const accountInfoSchema = {
     accountNumberLast4: { type: "string" },
     beginningBalance: { type: "number" },
     endingBalance: { type: "number" },
+    periodStart: { type: "string" },
+    periodEnd: { type: "string" },
   },
-  required: ["bankName", "accountHolder", "accountNumberLast4", "beginningBalance", "endingBalance"],
+  required: ["bankName", "accountHolder", "accountNumberLast4", "beginningBalance", "endingBalance", "periodStart", "periodEnd"],
   additionalProperties: false,
 };
 
@@ -357,7 +359,9 @@ const ACCOUNT_INFO_PROMPT = `Lees extractos bancarios. Extrae SOLO los datos de 
 - accountHolder: titular de la cuenta tal como aparece ("" si no aparece).
 - accountNumberLast4: SOLO los últimos 4 dígitos del número de cuenta, nunca el número completo ("" si no aparecen).
 - beginningBalance: saldo inicial / anterior impreso ("Beginning Balance", "Previous Balance", "Opening Balance", "Saldo anterior"); puede ser negativo si hay sobregiro. Usa -999999999 (nunca 0) si NO está impreso.
-- endingBalance: saldo final impreso ("Ending Balance", "Saldo final"). Usa -999999999 si NO está impreso.`;
+- endingBalance: saldo final impreso ("Ending Balance", "Saldo final"). Usa -999999999 si NO está impreso.
+- periodStart: primer día del período que cubre el extracto, en formato AAAA-MM-DD (ej. "2025-01-01"); "" si no aparece.
+- periodEnd: último día del período que cubre el extracto, en formato AAAA-MM-DD (ej. "2025-01-31"); "" si no aparece.`;
 
 /** An error whose message is already written for the person who uploaded the statement. */
 class UserFacingError extends Error {}

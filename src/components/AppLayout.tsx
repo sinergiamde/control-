@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Building2, ChevronRight, CornerDownRight, Crown, FileText, KeyRound, LayoutDashboard, LogOut, Menu, Moon, Receipt, Settings as SettingsIcon,
+  Building2, ChevronRight, CornerDownRight, Crown, FileText, KeyRound, LayoutDashboard, LineChart, LogOut, Menu, Moon, Receipt, Settings as SettingsIcon,
   Search, ShieldCheck, Sparkles, Sun, Users, X,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -110,7 +110,7 @@ const AppLayout = () => {
       "/receipts": tr(STR.receiptsTitle, isEnglish),
       "/dashboard": tr(STR.generalDashboardNav, isEnglish),
       "/clients": t("clientsNav"),
-      "/results": tr(STR.analyzeTitle, isEnglish),
+      "/results": tr(STR.profitLoss, isEnglish),
       "/history": tr(STR.statementsNav, isEnglish),
       "/admin": tr(STR.usersAndPermissionsNav, isEnglish),
       "/admin/users": tr(isAdmin ? STR.hubUsersTitle : STR.authorizedUsersNav, isEnglish),
@@ -174,6 +174,10 @@ const AppLayout = () => {
           <button type="button" onClick={() => go("/dashboard")} className={linkClass(location.pathname === "/dashboard")}>
             <LayoutDashboard className="h-4 w-4 shrink-0" />
             <span className="truncate">{tr(STR.generalDashboardNav, isEnglish)}</span>
+          </button>
+          <button type="button" onClick={() => go("/results")} className={linkClass(location.pathname === "/results")}>
+            <LineChart className="h-4 w-4 shrink-0" />
+            <span className="truncate">{tr(STR.profitLossNav, isEnglish)}</span>
           </button>
           <button type="button" onClick={() => go("/history")} className={linkClass(location.pathname === "/history")}>
             <FileText className="h-4 w-4 shrink-0" />

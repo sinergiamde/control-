@@ -403,8 +403,8 @@ function addExecutiveSummarySheet(wb: ExcelJS.Workbook, data: ResultsData, isEng
 
     const withdrawals = totalBankWithdrawals(bank);
     const rows: [string, number | null][] = [
-      [tr(STR.beginningBalance, isEnglish), bank.beginningBalance],
-      [tr(STR.endingBalance, isEnglish), bank.endingBalance],
+      [data.balanceLabels?.beginning || tr(STR.beginningBalance, isEnglish), bank.beginningBalance],
+      [data.balanceLabels?.ending || tr(STR.endingBalance, isEnglish), bank.endingBalance],
       [tr(STR.totalDeposits, isEnglish), bank.deposits.amount],
       [tr(STR.totalWithdrawals, isEnglish), withdrawals],
     ];
