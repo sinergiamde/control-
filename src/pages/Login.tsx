@@ -53,6 +53,7 @@ const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [otherCountry, setOtherCountry] = useState("");
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSending, setForgotSending] = useState(false);
@@ -87,6 +88,7 @@ const Login = () => {
       if (!form.name.trim()) errs.name = t("name") + " is required";
       if (!form.phone.trim()) errs.phone = t("phone") + " is required";
       if (!form.country) errs.country = t("country") + " is required";
+      else if (form.country === "Other" && !otherCountry.trim()) errs.country = t("writeYourCountry");
       if (form.password !== form.confirmPassword) errs.confirmPassword = "Passwords don't match";
     }
     setErrors(errs);
@@ -102,7 +104,7 @@ const Login = () => {
       const { error, signedIn } = await register(form.email, form.password, {
         name: form.name,
         phone: form.phone,
-        country: form.country,
+        country: form.country === "Other" ? otherCountry.trim() : form.country,
       });
       if (error) {
         toast({ title: "Error", description: error, variant: "destructive" });
@@ -193,6 +195,14 @@ const Login = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                    {form.country === "Other" && (
+                      <Input
+                        value={otherCountry}
+                        onChange={(e) => { setOtherCountry(e.target.value); setErrors((p) => ({ ...p, country: "" })); }}
+                        placeholder={t("writeYourCountry")}
+                        className={`${inputClass} ${!otherCountry.trim() ? "border-destructive" : ""}`}
+                      />
+                    )}
                     {renderError("country")}
                   </div>
                   <div className="space-y-2">

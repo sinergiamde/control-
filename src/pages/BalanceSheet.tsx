@@ -69,12 +69,28 @@ interface DetailRow {
   id: string;
   /** Kind of item, for lines that have kinds (house, car…). */
   kind: string;
+  /** What an "other" kind is, as the person wrote it (required when kind is "other"). */
+  kindOther: string;
   label: string;
   amount: string;
   date: string;
 }
 let rowSeq = 0;
-const newRow = (kind = ""): DetailRow => ({ id: `r${++rowSeq}`, kind, label: "", amount: "", date: "" });
+const newRow = (kind = ""): DetailRow => ({ id: `r${++rowSeq}`, kind, kindOther: "", label: "", amount: "", date: "" });
+
+/** A row the person started (any field filled); untouched rows are ignored. */
+const isUsed = (r: DetailRow) => !!(r.label.trim() || amountOf(r.amount) !== 0 || r.kind);
+
+/** What is missing in a started row: nothing is saved with a blank description, a missing type, or an
+ * "Other" type that doesn't say what it is — otherwise someone would have to guess it later. */
+const rowProblems = (line: LineDef, r: DetailRow) => {
+  if (!isUsed(r)) return { label: false, kind: false, kindOther: false };
+  return {
+    label: !r.label.trim(),
+    kind: !!line.kinds && !r.kind,
+    kindOther: !!line.kinds && r.kind === "other" && !r.kindOther.trim(),
+  };
+};
 
 const LISTS = ["revenues", "cogs", "opex", "fees", "personal"] as const;
 const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -94,6 +110,7 @@ const toRows = (value: unknown, defaultKind = ""): DetailRow[] => {
   if (Array.isArray(value)) {
     return value.map((it: any) => ({
       ...newRow(String(it?.kind ?? defaultKind)),
+      kindOther: String(it?.kindOther ?? ""),
       label: String(it?.label ?? ""),
       amount: amountOf(it?.amount) ? String(amountOf(it.amount)) : "",
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(it?.date ?? "")) ? String(it.date) : "",
@@ -105,12 +122,13 @@ const toRows = (value: unknown, defaultKind = ""): DetailRow[] => {
 
 /** Editable rows -> what is saved (empty rows dropped). */
 const toItems = (details: Record<string, DetailRow[]>) => {
-  const items: Record<string, { kind?: string; label: string; amount: number; date?: string }[]> = {};
+  const items: Record<string, { kind?: string; kindOther?: string; label: string; amount: number; date?: string }[]> = {};
   for (const line of ALL_LINES) {
     items[line.key] = (details[line.key] || [])
-      .filter((r) => r.label.trim() || amountOf(r.amount) !== 0)
+      .filter(isUsed)
       .map((r) => ({
         ...(line.kinds && r.kind ? { kind: r.kind } : {}),
+        ...(line.kinds && r.kind === "other" ? { kindOther: r.kindOther.trim() } : {}),
         label: r.label.trim(),
         amount: amountOf(r.amount),
         ...(line.due && r.date ? { date: r.date } : {}),
@@ -275,7 +293,8 @@ const BalanceSheet = () => {
 
   const canEdit = isAdmin || canManageClients;
   const currentSnapshot = JSON.stringify(toItems(details));
-  const hasAnyDetail = ALL_LINES.some((l) => (details[l.key] || []).some((r) => r.label.trim() || amountOf(r.amount) !== 0));
+  const hasAnyDetail = ALL_LINES.some((l) => (details[l.key] || []).some(isUsed));
+  const incomplete = ALL_LINES.some((l) => (details[l.key] || []).some((r) => Object.values(rowProblems(l, r)).some(Boolean)));
   const dirty = savedSnapshot ? currentSnapshot !== savedSnapshot : hasAnyDetail;
 
   const save = async () => {
@@ -334,7 +353,7 @@ const BalanceSheet = () => {
   const detailLine = (line: LineDef) => {
     const rows = details[line.key] || [];
     const open = expanded.has(line.key);
-    const count = rows.filter((r) => r.label.trim() || amountOf(r.amount) !== 0).length;
+    const count = rows.filter(isUsed).length;
     return (
       <div key={line.key} className="py-2">
         <button type="button" onClick={() => toggle(line.key)} className="w-full flex items-center justify-between gap-3 text-left">
@@ -362,11 +381,13 @@ const BalanceSheet = () => {
                 <span className="w-8" />
               </div>
             )}
-            {rows.map((r) => (
+            {rows.map((r) => {
+              const bad = rowProblems(line, r);
+              return (
               <div key={r.id} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                 {line.kinds && (
-                  <Select value={r.kind} onValueChange={(kind) => updateRow(line.key, r.id, { kind })} disabled={!canEdit}>
-                    <SelectTrigger className="h-8 w-40 text-xs">
+                  <Select value={r.kind} onValueChange={(kind) => updateRow(line.key, r.id, { kind, ...(kind !== "other" ? { kindOther: "" } : {}) })} disabled={!canEdit}>
+                    <SelectTrigger className={`h-8 w-40 text-xs ${bad.kind ? "border-destructive" : ""}`}>
                       <SelectValue placeholder={tr(STR.bsDetailKindPick, isEnglish)} />
                     </SelectTrigger>
                     <SelectContent>
@@ -376,12 +397,22 @@ const BalanceSheet = () => {
                     </SelectContent>
                   </Select>
                 )}
+                {line.kinds && r.kind === "other" && (
+                  <Input
+                    autoFocus
+                    value={r.kindOther}
+                    placeholder={tr(STR.bsKindOtherPlaceholder, isEnglish)}
+                    disabled={!canEdit}
+                    onChange={(e) => updateRow(line.key, r.id, { kindOther: e.target.value })}
+                    className={`h-8 w-40 text-xs ${bad.kindOther ? "border-destructive" : ""}`}
+                  />
+                )}
                 <Input
                   value={r.label}
                   placeholder={L(line.what)}
                   disabled={!canEdit}
                   onChange={(e) => updateRow(line.key, r.id, { label: e.target.value })}
-                  className="h-8 flex-1 min-w-[12rem] text-xs"
+                  className={`h-8 flex-1 min-w-[12rem] text-xs ${bad.label ? "border-destructive" : ""}`}
                 />
                 {line.due && (
                   <Input
@@ -407,7 +438,8 @@ const BalanceSheet = () => {
                   </Button>
                 )}
               </div>
-            ))}
+              );
+            })}
             {canEdit && (
               <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => addRow(line.key)}>
                 <Plus className="h-3.5 w-3.5" />
@@ -486,11 +518,18 @@ const BalanceSheet = () => {
               </Popover>
             </div>
           </div>
-          <Button onClick={save} disabled={!canEdit || saving || !dirty} className="gap-2 self-start sm:self-auto">
+          <Button onClick={save} disabled={!canEdit || saving || !dirty || incomplete} className="gap-2 self-start sm:self-auto">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {dirty || !savedSnapshot ? tr(STR.bsSave, isEnglish) : tr(STR.bsSavedShort, isEnglish)}
           </Button>
         </div>
+
+        {incomplete && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <Info className="h-4 w-4 shrink-0" />
+            <span>{tr(STR.bsIncomplete, isEnglish)}</span>
+          </div>
+        )}
 
         {savedAsOf && savedAsOf !== isoDay(asOf) && (
           <div className="flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">

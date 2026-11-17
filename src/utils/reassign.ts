@@ -1,4 +1,4 @@
-import { normalizeAnalysisTransactions, type TransactionList } from "./reportTypes";
+import { needsSpecify, normalizeAnalysisTransactions, type TransactionList } from "./reportTypes";
 
 const toNumber = (value: unknown) => {
   if (typeof value === "number") return Number.isFinite(value) ? Math.abs(value) : 0;
@@ -20,7 +20,8 @@ export interface TxnRef {
  * e.g. a "Meals" line in OpEx becomes "Entertainment" in Personal). The transaction is found by its
  * date, description and amount rather than its position, so it works from any screen. Returns the
  * updated analysis plus the stored totals that must be refreshed with it. */
-export const moveTransaction = (fullAnalysis: any, ref: TxnRef, targetList: TransactionList, targetCategory: string) => {
+export const moveTransaction = (fullAnalysis: any, ref: TxnRef, targetList: TransactionList, targetCategory: string, specify = "") => {
+  if (needsSpecify(targetCategory) && !specify.trim()) throw new Error("Escribe qué es esta transacción (obligatorio al elegir “Otro”).");
   const full = JSON.parse(JSON.stringify(fullAnalysis ?? {}));
   const source = full?.analysis ?? full;
   // Same cleanup the report applies, so positions and sections match what the person saw.
@@ -37,6 +38,8 @@ export const moveTransaction = (fullAnalysis: any, ref: TxnRef, targetList: Tran
   const [moved] = from.splice(index, 1);
   moved.category = targetCategory;
   moved.manual = true;
+  if (needsSpecify(targetCategory)) moved.specify = specify.trim();
+  else delete moved.specify;
   if (!Array.isArray(source[targetList])) source[targetList] = [];
   source[targetList].push(moved);
 

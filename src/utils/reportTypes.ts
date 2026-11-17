@@ -117,6 +117,16 @@ export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
 
 const TRANSACTION_LISTS: TransactionList[] = ["revenues", "cogs", "opex", "fees", "personal"];
 
+/** "Other …" categories: whoever picks one must say what it actually is (stored as `specify` on the
+ * transaction), so nobody has to guess later. */
+export const needsSpecify = (category: string) => /\(specify\)|^other\b/i.test(category);
+
+/** Category as shown to people: an "Other …" one carries what the person said it is. */
+export const categoryWithSpecify = (translated: string, specify: unknown) => {
+  const text = String(specify ?? "").trim();
+  return text ? `${translated.replace(/\s*\((specify|especificar)\)/i, "")}: ${text}` : translated;
+};
+
 /** Canonical list for every category string in REASSIGN_TAXONOMY (e.g. "Fuel (work)" -> "cogs"),
  * derived from that taxonomy so the two can't drift apart. */
 const CANONICAL_LIST_BY_CATEGORY: Record<string, TransactionList> = Object.fromEntries(

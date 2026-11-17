@@ -31,6 +31,8 @@ export interface Txn {
   analysisId: string;
   rawDate: string;
   desc: string;
+  /** What an "Other …" transaction is, as the person wrote it. */
+  specify?: string;
 }
 
 export const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -151,6 +153,7 @@ export const filterStatement = (row: StatementRow, interval: DateInterval | null
         analysisId: row.id,
         rawDate: String(item?.date ?? ""),
         desc: String(item?.desc || item?.name || ""),
+        ...(item?.specify ? { specify: String(item.specify) } : {}),
       });
       return true;
     });

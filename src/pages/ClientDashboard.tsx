@@ -12,6 +12,7 @@ import ChatBot from "@/components/ChatBot";
 import PeriodPicker, { fmtMonth, selectionLabel, selectionToInterval, type PeriodSelection } from "@/components/PeriodPicker";
 import StatementUploader, { type UploadOutcome } from "@/components/StatementUploader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,7 +27,7 @@ import { buildConsolidatedReport } from "@/utils/consolidateReport";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
 import { pickText, STR, tr, translateCategory } from "@/utils/i18n";
-import { REASSIGN_TAXONOMY, type TransactionList } from "@/utils/reportTypes";
+import { REASSIGN_TAXONOMY, needsSpecify, type TransactionList } from "@/utils/reportTypes";
 import { moveTransaction } from "@/utils/reassign";
 import { saveReportToStorage } from "@/utils/saveReport";
 import {
@@ -140,6 +141,8 @@ const ClientDashboard = () => {
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
   const [editingTxn, setEditingTxn] = useState<Txn | null>(null);
   const [targetCategory, setTargetCategory] = useState("");
+  const [targetSpecify, setTargetSpecify] = useState("");
+  const targetNeedsSpecify = !!targetCategory && needsSpecify(targetCategory.slice(targetCategory.indexOf("::") + 2));
   const [savingCategory, setSavingCategory] = useState(false);
   const expenseMix = useMemo(
     () =>
@@ -275,7 +278,7 @@ const ClientDashboard = () => {
       const { full, totals: stored } = moveTransaction(
         row.full_analysis,
         { list: editingTxn.list as TransactionList, rawDate: editingTxn.rawDate, desc: editingTxn.desc, amount: editingTxn.amount },
-        targetList, category
+        targetList, category, targetSpecify
       );
       const { data, error } = await supabase.from("analyses").update({ full_analysis: full, ...stored }).eq("id", row.id).select("id");
       if (error || !data?.length) throw new Error(error?.message || tr(STR.deleteNotAllowed, isEnglish));
@@ -501,12 +504,15 @@ const ClientDashboard = () => {
                                     <td className="pl-9 pr-2 py-2 whitespace-nowrap text-muted-foreground w-28">
                                       {t.date.toLocaleDateString(isEnglish ? "en-US" : "es-CO", { month: "short", day: "numeric", year: "numeric" })}
                                     </td>
-                                    <td className="px-2 py-2 text-foreground max-w-[320px] truncate" title={t.desc}>{t.desc || "—"}</td>
+                                    <td className="px-2 py-2 text-foreground max-w-[320px] truncate" title={t.specify ? `${t.desc} — ${t.specify}` : t.desc}>
+                                      {t.desc || "—"}
+                                      {t.specify && <span className="ml-1 text-xs text-muted-foreground">— {t.specify}</span>}
+                                    </td>
                                     <td className="px-2 py-2 text-right whitespace-nowrap text-destructive">{fmt(t.amount)}</td>
                                     <td className="pr-3 py-2 w-10 text-right">
                                       <button
                                         type="button"
-                                        onClick={() => { setEditingTxn(t); setTargetCategory(""); }}
+                                        onClick={() => { setEditingTxn(t); setTargetCategory(""); setTargetSpecify(""); }}
                                         title={tr(STR.changeCategoryTitle, isEnglish)}
                                         className="text-muted-foreground hover:text-primary"
                                       >
@@ -661,7 +667,7 @@ const ClientDashboard = () => {
                   {editingTxn.date.toLocaleDateString(isEnglish ? "en-US" : "es-CO", { month: "short", day: "numeric", year: "numeric" })} · {fmt(editingTxn.amount)} · {translateCategory(editingTxn.category, isEnglish)}
                 </p>
               </div>
-              <Select value={targetCategory} onValueChange={setTargetCategory}>
+              <Select value={targetCategory} onValueChange={(v) => { setTargetCategory(v); setTargetSpecify(""); }}>
                 <SelectTrigger><SelectValue placeholder={tr(STR.reassignCategoryLabel, isEnglish)} /></SelectTrigger>
                 <SelectContent className="max-h-72">
                   {(Object.keys(REASSIGN_TAXONOMY) as TransactionList[]).map((list) => (
@@ -674,11 +680,24 @@ const ClientDashboard = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {targetNeedsSpecify && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">{tr(STR.specifyOtherLabel, isEnglish)} *</label>
+                  <Input
+                    autoFocus
+                    value={targetSpecify}
+                    onChange={(e) => setTargetSpecify(e.target.value)}
+                    placeholder={tr(STR.specifyOtherPlaceholder, isEnglish)}
+                    className={targetSpecify.trim() ? "" : "border-destructive"}
+                  />
+                  <p className="text-xs text-muted-foreground">{tr(STR.specifyOtherHelp, isEnglish)}</p>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditingTxn(null)} disabled={savingCategory}>{tr(STR.reassignCancel, isEnglish)}</Button>
-            <Button onClick={confirmCategoryChange} disabled={!targetCategory || savingCategory}>
+            <Button onClick={confirmCategoryChange} disabled={!targetCategory || savingCategory || (targetNeedsSpecify && !targetSpecify.trim())}>
               {savingCategory && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               {tr(STR.reassignSave, isEnglish)}
             </Button>

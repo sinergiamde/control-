@@ -229,6 +229,12 @@ export const STR = {
   // Results.tsx page chrome
   profitLoss: { en: "Profit & Loss", es: "Estado de Resultados" },
   profitLossNav: { en: "Profit & Loss (P&L)", es: "Estado de resultados (P&L)" },
+  specifyOtherLabel: { en: "What is it exactly?", es: "¿Qué es exactamente?" },
+  specifyOtherPlaceholder: { en: "e.g. sale of used equipment, gift to a relative…", es: "ej. venta de equipo usado, regalo a un familiar…" },
+  specifyOtherHelp: {
+    en: "Required for “Other”: it is saved with the transaction and shown in the reports, so nobody has to guess what it was.",
+    es: "Obligatorio al elegir “Otro”: se guarda con la transacción y sale en los reportes, para que nadie tenga que adivinar qué fue.",
+  },
   // BalanceSheet.tsx
   balanceSheetNav: { en: "Balance Sheet", es: "Balance general" },
   bsTitle: { en: "Balance Sheet", es: "Balance General" },
@@ -262,6 +268,11 @@ export const STR = {
   bsFromStatement: { en: "From the statement, balance as of", es: "Del extracto, saldo al" },
   bsTotalAssets: { en: "Total assets", es: "Total activos" },
   bsDetailKind: { en: "Type", es: "Tipo" },
+  bsKindOtherPlaceholder: { en: "What is it? (required)", es: "¿Qué es? (obligatorio)" },
+  bsIncomplete: {
+    en: "Complete what is marked in red before saving: every row needs its description, and if you pick “Other”, say what it is.",
+    es: "Completa lo marcado en rojo antes de guardar: cada fila necesita su descripción y, si eliges “Otro”, escribe qué es.",
+  },
   bsDetailKindPick: { en: "Pick the type", es: "Elige el tipo" },
   bsDetailWhat: { en: "Description", es: "Descripción" },
   bsDetailDue: { en: "Due date", es: "Vence" },

@@ -5,6 +5,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -24,6 +25,8 @@ import {
   PERSONAL_TRANSFER_CATEGORY,
   PERSONAL_THIRD_PARTY_CATEGORIES,
   REASSIGN_TAXONOMY,
+  categoryWithSpecify,
+  needsSpecify,
   normalizeAnalysisTransactions,
   type SectionKind,
   type ThirdPartyPayment,
@@ -313,7 +316,7 @@ const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number, isEngli
       amount,
       percentage: toPercent(amount, totalRevenue),
       detail: detailParts.length > 0 ? detailParts.join(" • ") : undefined,
-      category: item?.category ? translateCategory(String(item.category), isEnglish) : undefined,
+      category: item?.category ? categoryWithSpecify(translateCategory(String(item.category), isEnglish), item?.specify) : undefined,
       sourceList: item?.__list,
       sourceIndex: typeof item?.__idx === "number" ? item.__idx : undefined,
       txnKey: txnKey(item?.date, item?.desc || item?.name, amount),
@@ -630,6 +633,7 @@ const Results = () => {
   const [clientRows, setClientRows] = useState<StatementRow[] | null>(null);
   const [reassignItem, setReassignItem] = useState<LineItem | null>(null);
   const [reassignTarget, setReassignTarget] = useState<string>("");
+  const [reassignSpecify, setReassignSpecify] = useState("");
   const [savingReassign, setSavingReassign] = useState(false);
   const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
 
@@ -888,7 +892,10 @@ const Results = () => {
   const openReassign = (item: LineItem) => {
     setReassignItem(item);
     setReassignTarget("");
+    setReassignSpecify("");
   };
+
+  const reassignNeedsSpecify = !!reassignTarget && needsSpecify(reassignTarget.slice(reassignTarget.indexOf("::") + 2));
 
   const handleConfirmReassign = async () => {
     if (!reassignItem || !reassignTarget || reassignItem.sourceList === undefined || reassignItem.sourceIndex === undefined) return;
@@ -914,7 +921,8 @@ const Results = () => {
           amount: toNumber(rawItem.amt ?? rawItem.amount),
         },
         targetList,
-        targetCategory
+        targetCategory,
+        reassignSpecify
       );
       const { data: updated, error } = await supabase
         .from("analyses")
@@ -1254,7 +1262,7 @@ const Results = () => {
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">{tr(STR.reassignCategoryLabel, isEnglish)}</label>
-                <Select value={reassignTarget} onValueChange={setReassignTarget}>
+                <Select value={reassignTarget} onValueChange={(v) => { setReassignTarget(v); setReassignSpecify(""); }}>
                   <SelectTrigger>
                     <SelectValue placeholder={tr(STR.reassignCategoryLabel, isEnglish)} />
                   </SelectTrigger>
@@ -1272,6 +1280,19 @@ const Results = () => {
                   </SelectContent>
                 </Select>
               </div>
+              {reassignNeedsSpecify && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">{tr(STR.specifyOtherLabel, isEnglish)} *</label>
+                  <Input
+                    autoFocus
+                    value={reassignSpecify}
+                    onChange={(e) => setReassignSpecify(e.target.value)}
+                    placeholder={tr(STR.specifyOtherPlaceholder, isEnglish)}
+                    className={reassignSpecify.trim() ? "" : "border-destructive"}
+                  />
+                  <p className="text-xs text-muted-foreground">{tr(STR.specifyOtherHelp, isEnglish)}</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -1279,7 +1300,7 @@ const Results = () => {
             <Button variant="outline" onClick={() => setReassignItem(null)} disabled={savingReassign}>
               {tr(STR.reassignCancel, isEnglish)}
             </Button>
-            <Button onClick={handleConfirmReassign} disabled={!reassignTarget || savingReassign} className="neon-glow">
+            <Button onClick={handleConfirmReassign} disabled={!reassignTarget || savingReassign || (reassignNeedsSpecify && !reassignSpecify.trim())} className="neon-glow">
               {savingReassign ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {savingReassign ? tr(STR.reassignSaving, isEnglish) : tr(STR.reassignSave, isEnglish)}
             </Button>
