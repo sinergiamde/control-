@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import ChatBot from "@/components/ChatBot";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -37,6 +37,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { openReceiptFile, receiptTxnKey, txnKey, type ReceiptRow } from "@/utils/receipts";
 import { balanceDates, balanceLabel } from "@/utils/balanceDates";
+import PeriodPicker, { selectionLabel, selectionToInterval, type PeriodSelection } from "@/components/PeriodPicker";
+import { filterStatement, monthKey, statementRange, type FilteredStatement, type StatementRow } from "@/utils/statementPeriod";
+import { deserializeSelection, mergeStatements, selectionForRange, serializeSelection } from "@/utils/periodView";
+import { moveTransaction } from "@/utils/reassign";
 
 interface LineItem {
   name: string;
@@ -591,6 +595,9 @@ const results0Bank = (source: any, key: "beginningBalance" | "endingBalance"): n
   return bank.found ? bank[key] : null;
 };
 
+/** Picker value for statements that belong to no client. */
+const NO_CLIENT = "__none__";
+
 interface StatementOption {
   id: string;
   client_id: string | null;
@@ -609,28 +616,31 @@ const Results = () => {
   const { toast } = useToast();
 
   const navState = (location.state as any) || {};
-  const [analysisId, setAnalysisId] = useState<string | undefined>(navState.analysisId);
-  const [clientId, setClientId] = useState<string | null>(navState.clientId ?? null);
-  const [rawResults, setRawResults] = useState<any>(navState.results);
-  // Every statement this person can see, newest first, for the "show the P&L of" picker. Opening the
-  // page from the menu (no statement chosen) shows the newest one.
+  // A report another page already built (History's multi-statement selection) is shown as it came.
+  const [handedReport, setHandedReport] = useState<any>(
+    !navState.analysisId && !navState.period && navState.results ? navState.results : null
+  );
+  // Otherwise the page shows one client over a date range: every statement of that client inside the
+  // range, read from the database (never from a copy handed over by the previous page, which can be
+  // stale). `statements` (light, newest first) feeds the client list and the initial choice.
   const [statements, setStatements] = useState<StatementOption[] | null>(null);
-  const [openingStatement, setOpeningStatement] = useState(false);
+  const [clientKey, setClientKey] = useState<string | null>(navState.clientKey ?? null);
+  const [selection, setSelection] = useState<PeriodSelection | null>(deserializeSelection(navState.period));
+  const [pendingAnalysisId, setPendingAnalysisId] = useState<string | null>(navState.analysisId ?? null);
+  const [clientRows, setClientRows] = useState<StatementRow[] | null>(null);
   const [reassignItem, setReassignItem] = useState<LineItem | null>(null);
   const [reassignTarget, setReassignTarget] = useState<string>("");
   const [savingReassign, setSavingReassign] = useState(false);
   const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
 
-  // A new visit to /results (from a statement, a client, the menu, or a page reload) replaces what is
-  // shown. The copy handed over by the previous page can be older than what is saved (a category was
-  // changed since, or the browser kept it across a reload), so a saved statement is always re-read.
+  // A new visit to /results (from a statement, a client, the menu, or a reload) starts from what it was
+  // asked to show; the chosen client and dates live in the history state so a reload keeps them.
   useEffect(() => {
     const st = (location.state as any) || {};
-    setAnalysisId(st.analysisId);
-    setClientId(st.clientId ?? null);
-    setRawResults(st.results);
-    if (st.analysisId) openStatement(st.analysisId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setHandedReport(!st.analysisId && !st.period && st.results ? st.results : null);
+    setClientKey(st.clientKey ?? null);
+    setSelection(deserializeSelection(st.period));
+    setPendingAnalysisId(st.analysisId ?? null);
   }, [location.key]);
 
   useEffect(() => {
@@ -642,25 +652,97 @@ const Results = () => {
       .then(({ data }) => setStatements((data as unknown as StatementOption[]) || []));
   }, [user]);
 
-  const openStatement = async (id: string) => {
-    setOpeningStatement(true);
-    const { data, error } = await supabase.from("analyses").select("id, client_id, full_analysis").eq("id", id).maybeSingle();
-    setOpeningStatement(false);
-    if (error || !data) {
-      toast({ title: "Error", description: error?.message || tr(STR.noDataTitle, isEnglish), variant: "destructive" });
-      return;
-    }
-    setRawResults(data.full_analysis);
-    setAnalysisId(data.id);
-    setClientId(data.client_id);
+  const lightRow = (st: StatementOption): StatementRow => ({
+    id: st.id, user_id: "", client_id: st.client_id, period: st.period || "",
+    original_filename: st.original_filename || "", created_at: st.created_at, full_analysis: {},
+  });
+
+  const showPeriod = (key: string, sel: PeriodSelection) => {
+    setClientKey(key);
+    setSelection(sel);
+    setPendingAnalysisId(null);
+    navigate("/results", { replace: true, state: { clientKey: key, period: serializeSelection(sel) } });
   };
 
+  // Nothing chosen yet: the statement another page handed over, else the newest one (of the chosen
+  // client, if any), decides the client and the dates — that statement's own month.
   useEffect(() => {
-    if (!rawResults && !analysisId && statements && statements.length > 0 && !openingStatement) {
-      openStatement(statements[0].id);
-    }
+    if (handedReport || !statements || statements.length === 0 || (clientKey && selection)) return;
+    const pool = clientKey ? statements.filter((st) => (st.client_id ?? NO_CLIENT) === clientKey) : statements;
+    const target = (pendingAnalysisId && statements.find((st) => st.id === pendingAnalysisId)) || pool[0] || statements[0];
+    showPeriod(target.client_id ?? NO_CLIENT, selectionForRange(statementRange(lightRow(target))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statements, rawResults, analysisId]);
+  }, [statements, handedReport, clientKey, selection, pendingAnalysisId]);
+
+  useEffect(() => {
+    if (!clientKey || handedReport) return;
+    let cancelled = false;
+    setClientRows(null);
+    let query = supabase.from("analyses").select("id, user_id, client_id, period, original_filename, created_at, full_analysis");
+    query = clientKey === NO_CLIENT ? query.is("client_id", null) : query.eq("client_id", clientKey);
+    query.then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
+      setClientRows((data as StatementRow[]) || []);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientKey, handedReport]);
+
+  // What is on screen: the transactions of every statement inside the dates, as one analysis.
+  const view = useMemo(() => {
+    if (handedReport) return { raw: handedReport, analysisId: undefined as string | undefined, count: 0 };
+    if (!clientRows || !selection) return null;
+    const filtered = clientRows
+      .map((row) => filterStatement(row, selectionToInterval(selection)))
+      .filter((f): f is FilteredStatement => !!f);
+    if (filtered.length === 0) return { raw: null, analysisId: undefined, count: 0 };
+    const n = filtered.length;
+    const label = { en: selectionLabel(selection, true), es: selectionLabel(selection, false) };
+    return {
+      raw: mergeStatements(filtered, n > 1 ? { en: `${label.en} · ${n} statements`, es: `${label.es} · ${n} extractos` } : label),
+      analysisId: n === 1 ? filtered[0].row.id : undefined,
+      count: n,
+    };
+  }, [handedReport, clientRows, selection]);
+  const rawResults = view?.raw ?? null;
+  const analysisId = view?.analysisId;
+  const clientId = clientKey && clientKey !== NO_CLIENT ? clientKey : null;
+
+  // Months and days that have transactions, marked in the date picker.
+  const pickerData = useMemo(() => {
+    const months = new Set<string>();
+    const days: Date[] = [];
+    for (const row of clientRows || []) {
+      const f = filterStatement(row, null);
+      if (!f) continue;
+      for (const txn of f.txns) {
+        months.add(monthKey(txn.date));
+        days.push(txn.date);
+      }
+    }
+    return { months: [...months], days };
+  }, [clientRows]);
+
+  const clientOptions = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const st of statements || []) names.set(st.client_id ?? NO_CLIENT, st.clients?.name || tr(STR.noClientLabel, isEnglish));
+    return [...names.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [statements, isEnglish]);
+
+  // Switching client keeps the dates when that client has statements in them, else shows its newest.
+  const changeClient = (key: string) => {
+    const own = (statements || []).filter((st) => (st.client_id ?? NO_CLIENT) === key);
+    const interval = selection ? selectionToInterval(selection) : null;
+    const fits = selection && own.some((st) => {
+      const range = statementRange(lightRow(st));
+      return !interval || (range.from <= interval.to && range.to >= interval.from);
+    });
+    if (fits && selection) showPeriod(key, selection);
+    else if (own[0]) showPeriod(key, selectionForRange(statementRange(lightRow(own[0]))));
+  };
 
   // Receipts linked to this statement's transactions, shown next to each one (and in the exports).
   useEffect(() => {
@@ -677,11 +759,50 @@ const Results = () => {
     return null;
   }
 
-  if (!rawResults && (statements === null || openingStatement || (statements.length > 0 && !analysisId))) {
+  const pickerBar = !handedReport && statements && statements.length > 0 && clientKey && selection ? (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground shrink-0">{tr(STR.showPnlOf, isEnglish)}</span>
+      <Select value={clientKey} onValueChange={changeClient}>
+        <SelectTrigger className="h-9 w-48 text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {clientOptions.map(([key, name]) => (
+            <SelectItem key={key} value={key}>{name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <PeriodPicker
+        value={selection}
+        onChange={(sel) => showPeriod(clientKey, sel)}
+        monthsWithData={pickerData.months}
+        daysWithData={pickerData.days}
+        isEnglish={isEnglish}
+      />
+    </div>
+  ) : null;
+
+  if (!handedReport && (statements === null || (statements.length > 0 && (!clientKey || !selection || clientRows === null)))) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground gap-2 text-sm">
         <Loader2 className="h-5 w-5 animate-spin" />
         {tr(STR.loadingStatement, isEnglish)}
+      </div>
+    );
+  }
+
+  if (!rawResults && pickerBar) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{tr(STR.profitLoss, isEnglish)}</h1>
+          {pickerBar}
+          <Card className="neon-border bg-card mt-6">
+            <CardContent className="p-8 text-center text-sm text-muted-foreground">
+              {tr(STR.noStatementsInRange, isEnglish)}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -729,9 +850,12 @@ const Results = () => {
       hasAnyMissing: beginning === null || ending === null || !info.bankName || !info.last4,
     };
   })();
-  const dates = balanceDates(rawResults);
+  // Dates that cut a statement in half have no printed balance for the days they start or end on.
+  const partialRange = !!acctSource?.balancesPartial;
+  const dates = partialRange ? { beginning: null, ending: null } : balanceDates(rawResults);
   const beginningLabel = balanceLabel(tr(STR.beginningBalance, isEnglish), dates.beginning, isEnglish);
   const endingLabel = balanceLabel(tr(STR.endingBalance, isEnglish), dates.ending, isEnglish);
+  const missingBalanceText = tr(partialRange ? STR.balanceNeedsWholeMonths : STR.notReadFromStatement, isEnglish);
   const fmtBalance = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
 
   const receiptByKey = new Map(receipts.map((r) => [receiptTxnKey(r), r]));
@@ -775,58 +899,32 @@ const Results = () => {
 
     setSavingReassign(true);
     try {
-      const cloned = JSON.parse(JSON.stringify(rawResults));
-      const source = cloned?.analysis ?? cloned;
-      const fromArr: any[] = Array.isArray(source[reassignItem.sourceList]) ? source[reassignItem.sourceList] : [];
-      const [movedItem] = fromArr.splice(reassignItem.sourceIndex, 1);
-      if (!movedItem) throw new Error("Transaction not found");
-      movedItem.category = targetCategory;
-      movedItem.manual = true;
-      if (!Array.isArray(source[targetList])) source[targetList] = [];
-      source[targetList].push(movedItem);
-
-      const sumList = (arr: any[]) =>
-        (Array.isArray(arr) ? arr : []).reduce((sum: number, it: any) => sum + toNumber(it?.amt ?? it?.amount), 0);
-      const revenuesTotal = sumList(source.revenues);
-      const cogsTotal = sumList(source.cogs);
-      const opexTotal = sumList(source.opex);
-      const feesTotal = sumList(source.fees);
-      const personalTotal = sumList(source.personal);
-      const totalSpent = cogsTotal + opexTotal + feesTotal + personalTotal;
-      const allExpenseItems = [
-        ...(Array.isArray(source.cogs) ? source.cogs : []),
-        ...(Array.isArray(source.opex) ? source.opex : []),
-        ...(Array.isArray(source.fees) ? source.fees : []),
-        ...(Array.isArray(source.personal) ? source.personal : []),
-      ];
-      const topItem = [...allExpenseItems].sort(
-        (a, b) => toNumber(b?.amt ?? b?.amount) - toNumber(a?.amt ?? a?.amount)
-      )[0];
-      const topCategory = String(topItem?.desc || topItem?.category || "");
-
-      if (analysisId) {
-        const { data: updated, error } = await supabase
-          .from("analyses")
-          .update({
-            full_analysis: cloned,
-            revenues_total: revenuesTotal,
-            cogs_total: cogsTotal,
-            opex_total: opexTotal,
-            fees_total: feesTotal,
-            personal_total: personalTotal,
-            total_spent: totalSpent,
-            top_category: topCategory,
-          })
-          .eq("id", analysisId)
-          .select("id");
-        if (error) throw error;
-        // No row changed means the database refused it (no permission): never report it as saved.
-        if (!updated || updated.length === 0) throw new Error(tr(STR.reassignNotSaved, isEnglish));
-      }
-
-      setRawResults(cloned);
-      // Keep the browser's copy of this page in step, so a reload shows the change too.
-      navigate("/results", { replace: true, state: { results: cloned, analysisId, clientId } });
+      // The transaction is saved in the statement it belongs to (the view may combine several).
+      const viewSource = rawResults?.analysis ?? rawResults;
+      const rawItem = viewSource?.[reassignItem.sourceList]?.[reassignItem.sourceIndex];
+      const rowId: string | undefined = rawItem?._analysisId ?? analysisId;
+      const row = clientRows?.find((r) => r.id === rowId);
+      if (!rawItem || !row) throw new Error(tr(STR.reassignError, isEnglish));
+      const { full, totals } = moveTransaction(
+        row.full_analysis,
+        {
+          list: reassignItem.sourceList,
+          rawDate: String(rawItem.date ?? ""),
+          desc: String(rawItem.desc || rawItem.name || ""),
+          amount: toNumber(rawItem.amt ?? rawItem.amount),
+        },
+        targetList,
+        targetCategory
+      );
+      const { data: updated, error } = await supabase
+        .from("analyses")
+        .update({ full_analysis: full, ...totals })
+        .eq("id", row.id)
+        .select("id");
+      if (error) throw error;
+      // No row changed means the database refused it (no permission): never report it as saved.
+      if (!updated || updated.length === 0) throw new Error(tr(STR.reassignNotSaved, isEnglish));
+      setClientRows((prev) => (prev || []).map((r) => (r.id === row.id ? { ...r, full_analysis: full } : r)));
       setReassignItem(null);
       toast({ title: "✅", description: tr(STR.reassignSuccess, isEnglish) });
     } catch (err) {
@@ -872,22 +970,9 @@ const Results = () => {
             {results.period && (
               <p className="text-muted-foreground text-xs mt-0.5">{results.period}</p>
             )}
-            {statements && statements.length > 0 && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-xs text-muted-foreground shrink-0">{tr(STR.showPnlOf, isEnglish)}</span>
-                <Select value={analysisId ?? ""} onValueChange={(id) => openStatement(id)}>
-                  <SelectTrigger className="h-8 w-[min(22rem,70vw)] text-xs">
-                    <SelectValue placeholder={tr(STR.consolidatedReport, isEnglish)} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statements.map((st) => (
-                      <SelectItem key={st.id} value={st.id} className="text-xs">
-                        {(st.clients?.name || tr(STR.noClientLabel, isEnglish)) + " — " + (st.period || st.original_filename || new Date(st.created_at).toLocaleDateString())}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {pickerBar}
+            {view && view.count > 1 && (
+              <p className="mt-2 text-xs text-muted-foreground">{tr(STR.combinedStatementsHint, isEnglish).replace("{n}", String(view.count))}</p>
             )}
           </div>
           <div className="flex gap-3">
@@ -932,8 +1017,8 @@ const Results = () => {
             <div className="grid grid-cols-3 gap-3 text-center border-t border-border pt-4">
               <div>
                 <p className="text-xs text-muted-foreground">{beginningLabel}</p>
-                <p className={`text-lg font-bold ${account.beginning === null ? "text-muted-foreground/60 text-sm font-normal" : "text-foreground"}`}>
-                  {account.beginning === null ? tr(STR.notReadFromStatement, isEnglish) : fmtBalance(account.beginning)}
+                <p className={`text-lg font-bold ${account.beginning === null || partialRange ? "text-muted-foreground/60 text-sm font-normal" : "text-foreground"}`}>
+                  {account.beginning === null || partialRange ? missingBalanceText : fmtBalance(account.beginning)}
                 </p>
               </div>
               <div>
@@ -944,13 +1029,15 @@ const Results = () => {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">{endingLabel}</p>
-                <p className={`text-lg font-bold ${account.ending === null ? "text-muted-foreground/60 text-sm font-normal" : "text-foreground"}`}>
-                  {account.ending === null ? tr(STR.notReadFromStatement, isEnglish) : fmtBalance(account.ending)}
+                <p className={`text-lg font-bold ${account.ending === null || partialRange ? "text-muted-foreground/60 text-sm font-normal" : "text-foreground"}`}>
+                  {account.ending === null || partialRange ? missingBalanceText : fmtBalance(account.ending)}
                 </p>
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground text-center">
-              {account.hasAnyMissing ? tr(STR.accountMissingNote, isEnglish) : tr(STR.balanceVsNetIncomeNote, isEnglish)}
+              {partialRange
+                ? tr(STR.balanceNeedsWholeMonthsNote, isEnglish)
+                : account.hasAnyMissing ? tr(STR.accountMissingNote, isEnglish) : tr(STR.balanceVsNetIncomeNote, isEnglish)}
             </p>
           </CardContent>
         </Card>
@@ -1046,7 +1133,7 @@ const Results = () => {
             {tr(STR.detailedBreakdown, isEnglish)}
           </h2>
           {results.sections.map((section, i) => (
-            <CollapsibleSection key={section.title} section={section} index={i} onReassign={analysisId ? openReassign : undefined} receiptLabel={receiptWord} />
+            <CollapsibleSection key={section.title} section={section} index={i} onReassign={!handedReport && clientRows ? openReassign : undefined} receiptLabel={receiptWord} />
           ))}
         </div>
 

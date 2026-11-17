@@ -88,8 +88,10 @@ const PeriodPicker = ({ value, onChange, monthsWithData, daysWithData = [], isEn
 
   useEffect(() => {
     if (!open) return;
-    const from = value.kind === "custom" ? value.from : undefined;
-    const to = value.kind === "custom" ? value.to : undefined;
+    // The calendar opens with the dates currently shown already marked (a month or a year too).
+    const current = selectionToInterval(value);
+    const from = current ? current.from : undefined;
+    const to = current ? startOfDay(current.to) : undefined;
     setDraftFrom(from);
     setDraftTo(to);
     const anchor = from || latestDataMonth;

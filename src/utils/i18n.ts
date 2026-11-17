@@ -229,6 +229,19 @@ export const STR = {
   // Results.tsx page chrome
   profitLoss: { en: "Profit & Loss", es: "Estado de Resultados" },
   profitLossNav: { en: "Profit & Loss (P&L)", es: "Estado de resultados (P&L)" },
+  balanceNeedsWholeMonths: { en: "Pick whole months", es: "Elige meses completos" },
+  balanceNeedsWholeMonthsNote: {
+    en: "These dates cut a statement in half, and the bank only prints balances at the start and end of each statement. Pick whole months (or a year) to see the beginning and ending balance.",
+    es: "Estas fechas cortan un extracto a la mitad y el banco solo imprime el saldo al inicio y al final de cada extracto. Elige meses completos (o un año) para ver el saldo inicial y final.",
+  },
+  noStatementsInRange: {
+    en: "This client has no statements in those dates. Pick other dates or another client.",
+    es: "Este cliente no tiene extractos en esas fechas. Elige otras fechas u otro cliente.",
+  },
+  combinedStatementsHint: {
+    en: "Combines {n} statements. You can still change any transaction's category: it is saved in its own statement.",
+    es: "Suma {n} extractos. Igual puedes cambiar la categoría de cualquier transacción: se guarda en su propio extracto.",
+  },
   thirdPartyPageNote: {
     en: "This is part of the analysis, but it is for information only: these payments are already counted in the categories above (they are not added again) and help track 1099 forms.",
     es: "Esto hace parte del análisis, pero es solo informativo: estos pagos ya están contados en las categorías de arriba (no se suman de nuevo) y sirven para el control de los formularios 1099.",
