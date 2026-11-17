@@ -28,12 +28,32 @@ interface LineDef {
   add: Bilingual;
   /** Rows carry a due date. */
   due?: boolean;
+  /** Rows start by picking what kind of item it is (house, car, farm…). */
+  kinds?: { value: string; label: Bilingual }[];
+  /** Short reminder of what belongs in the line, under its name. */
+  hint?: Bilingual;
 }
 const ASSET_LINES: LineDef[] = [
   { key: "receivables", label: { en: "Accounts Receivable", es: "Cuentas por cobrar" }, what: { en: "Who owes you? (customer)", es: "¿Quién te debe? (cliente)" }, add: { en: "Add who owes you", es: "Agregar quién te debe" }, due: true },
   { key: "inventory", label: { en: "Inventory", es: "Inventario" }, what: { en: "Type of inventory (e.g. drywall, materials, goods)", es: "Tipo de inventario (ej. drywall, materiales, mercancía)" }, add: { en: "Add inventory", es: "Agregar inventario" } },
-  { key: "equipment", label: { en: "Equipment", es: "Equipos" }, what: { en: "Type of equipment (e.g. truck, tools, computer)", es: "Tipo de equipo (ej. camioneta, herramientas, computador)" }, add: { en: "Add equipment", es: "Agregar equipo" } },
-  { key: "buildings", label: { en: "Buildings", es: "Edificios" }, what: { en: "Which building? (address or description)", es: "¿Qué edificio? (dirección o descripción)" }, add: { en: "Add building", es: "Agregar edificio" } },
+  { key: "equipment", label: { en: "Equipment", es: "Equipos" }, what: { en: "Type of equipment (e.g. tools, machinery, computer)", es: "Tipo de equipo (ej. herramientas, maquinaria, computador)" }, add: { en: "Add equipment", es: "Agregar equipo" } },
+  {
+    key: "properties",
+    label: { en: "Property", es: "Propiedades" },
+    hint: { en: "Houses, cars, farms, buildings, land…", es: "Casas, carros, fincas, edificios, terrenos…" },
+    what: { en: "Which one? (address, plate or description)", es: "¿Cuál? (dirección, placa o descripción)" },
+    add: { en: "Add property", es: "Agregar propiedad" },
+    kinds: [
+      { value: "house", label: { en: "House", es: "Casa" } },
+      { value: "apartment", label: { en: "Apartment", es: "Apartamento" } },
+      { value: "car", label: { en: "Car / vehicle", es: "Carro / vehículo" } },
+      { value: "farm", label: { en: "Farm", es: "Finca" } },
+      { value: "building", label: { en: "Building", es: "Edificio" } },
+      { value: "land", label: { en: "Land / lot", es: "Terreno / lote" } },
+      { value: "commercial", label: { en: "Store / office", es: "Local / oficina" } },
+      { value: "other", label: { en: "Other", es: "Otro" } },
+    ],
+  },
   { key: "otherAssets", label: { en: "Other assets", es: "Otros activos" }, what: { en: "What is the asset?", es: "¿Qué activo es?" }, add: { en: "Add asset", es: "Agregar activo" } },
 ];
 const LIABILITY_LINES: LineDef[] = [
@@ -47,12 +67,14 @@ const ALL_LINES = [...ASSET_LINES, ...LIABILITY_LINES];
 
 interface DetailRow {
   id: string;
+  /** Kind of item, for lines that have kinds (house, car…). */
+  kind: string;
   label: string;
   amount: string;
   date: string;
 }
 let rowSeq = 0;
-const newRow = (): DetailRow => ({ id: `r${++rowSeq}`, label: "", amount: "", date: "" });
+const newRow = (kind = ""): DetailRow => ({ id: `r${++rowSeq}`, kind, label: "", amount: "", date: "" });
 
 const LISTS = ["revenues", "cogs", "opex", "fees", "personal"] as const;
 const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -68,26 +90,31 @@ const parseIso = (s: string | null) => {
 };
 
 /** Saved items -> editable rows. Older saves stored one plain number per line. */
-const toRows = (value: unknown): DetailRow[] => {
+const toRows = (value: unknown, defaultKind = ""): DetailRow[] => {
   if (Array.isArray(value)) {
     return value.map((it: any) => ({
-      ...newRow(),
+      ...newRow(String(it?.kind ?? defaultKind)),
       label: String(it?.label ?? ""),
       amount: amountOf(it?.amount) ? String(amountOf(it.amount)) : "",
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(it?.date ?? "")) ? String(it.date) : "",
     }));
   }
   const n = amountOf(value);
-  return n ? [{ ...newRow(), amount: String(n) }] : [];
+  return n ? [{ ...newRow(defaultKind), amount: String(n) }] : [];
 };
 
 /** Editable rows -> what is saved (empty rows dropped). */
 const toItems = (details: Record<string, DetailRow[]>) => {
-  const items: Record<string, { label: string; amount: number; date?: string }[]> = {};
+  const items: Record<string, { kind?: string; label: string; amount: number; date?: string }[]> = {};
   for (const line of ALL_LINES) {
     items[line.key] = (details[line.key] || [])
       .filter((r) => r.label.trim() || amountOf(r.amount) !== 0)
-      .map((r) => ({ label: r.label.trim(), amount: amountOf(r.amount), ...(line.due && r.date ? { date: r.date } : {}) }));
+      .map((r) => ({
+        ...(line.kinds && r.kind ? { kind: r.kind } : {}),
+        label: r.label.trim(),
+        amount: amountOf(r.amount),
+        ...(line.due && r.date ? { date: r.date } : {}),
+      }));
   }
   return items;
 };
@@ -190,6 +217,7 @@ const BalanceSheet = () => {
         const row = data?.[0] as { as_of: string; items: Record<string, unknown> } | undefined;
         const loaded: Record<string, DetailRow[]> = {};
         for (const line of ALL_LINES) loaded[line.key] = toRows(row?.items?.[line.key]);
+        loaded.properties = [...loaded.properties, ...toRows(row?.items?.buildings, "building")];
         setDetails(loaded);
         setSavedSnapshot(row?.as_of === isoDay(asOf) ? JSON.stringify(toItems(loaded)) : "");
         setSavedAsOf(row?.as_of ?? null);
@@ -318,6 +346,7 @@ const BalanceSheet = () => {
                 {count > 0 && <span className="ml-1 text-xs text-muted-foreground">({count})</span>}
               </span>
               {!isEnglish && <span className="block text-[11px] text-muted-foreground">{line.label.en}</span>}
+              {line.hint && <span className="block text-[11px] text-muted-foreground">{L(line.hint)}</span>}
             </span>
           </span>
           <span className="text-sm font-semibold tabular-nums">{money(typed(line.key))}</span>
@@ -326,6 +355,7 @@ const BalanceSheet = () => {
           <div className="mt-2 ml-5 space-y-2">
             {rows.length > 0 && (
               <div className="hidden sm:flex gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {line.kinds && <span className="w-40">{tr(STR.bsDetailKind, isEnglish)}</span>}
                 <span className="flex-1">{tr(STR.bsDetailWhat, isEnglish)}</span>
                 {line.due && <span className="w-36">{tr(STR.bsDetailDue, isEnglish)}</span>}
                 <span className="w-28 text-right">{tr(STR.bsDetailAmount, isEnglish)}</span>
@@ -334,6 +364,18 @@ const BalanceSheet = () => {
             )}
             {rows.map((r) => (
               <div key={r.id} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                {line.kinds && (
+                  <Select value={r.kind} onValueChange={(kind) => updateRow(line.key, r.id, { kind })} disabled={!canEdit}>
+                    <SelectTrigger className="h-8 w-40 text-xs">
+                      <SelectValue placeholder={tr(STR.bsDetailKindPick, isEnglish)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {line.kinds.map((k) => (
+                        <SelectItem key={k.value} value={k.value} className="text-xs">{L(k.label)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <Input
                   value={r.label}
                   placeholder={L(line.what)}

@@ -261,6 +261,8 @@ export const STR = {
   },
   bsFromStatement: { en: "From the statement, balance as of", es: "Del extracto, saldo al" },
   bsTotalAssets: { en: "Total assets", es: "Total activos" },
+  bsDetailKind: { en: "Type", es: "Tipo" },
+  bsDetailKindPick: { en: "Pick the type", es: "Elige el tipo" },
   bsDetailWhat: { en: "Description", es: "Descripción" },
   bsDetailDue: { en: "Due date", es: "Vence" },
   bsDetailAmount: { en: "Amount", es: "Monto" },
@@ -276,8 +278,8 @@ export const STR = {
   bsOtherEquitySub: { en: "The rest of the equity", es: "El resto del patrimonio" },
   bsDebtRatio: { en: "Debt ratio (liabilities ÷ assets)", es: "Nivel de endeudamiento (pasivos ÷ activos)" },
   bsFootnote: {
-    en: "Cash in bank comes from the statements. The other assets and the liabilities are not in a bank statement: click a line to itemize it (who owes, which lender, what kind of equipment…) and save. Equity is always Assets − Liabilities.",
-    es: "El efectivo en banco sale de los extractos. Los demás activos y los pasivos no aparecen en un extracto bancario: haz clic en una línea para detallarla (quién te debe, a quién le debes, qué tipo de equipo…) y guarda. El patrimonio siempre es Activos − Pasivos.",
+    en: "Cash in bank comes from the statements. The other assets and the liabilities are not in a bank statement: click a line to itemize it (who owes, which lender, which house or car…) and save. Equity is always Assets − Liabilities.",
+    es: "El efectivo en banco sale de los extractos. Los demás activos y los pasivos no aparecen en un extracto bancario: haz clic en una línea para detallarla (quién te debe, a quién le debes, qué casa o carro…) y guarda. El patrimonio siempre es Activos − Pasivos.",
   },
   balanceNeedsWholeMonths: { en: "Pick whole months", es: "Elige meses completos" },
   balanceNeedsWholeMonthsNote: {
