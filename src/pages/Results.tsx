@@ -13,7 +13,7 @@ import {
   DollarSign, TrendingUp, Receipt, ArrowLeft, Download, ChevronDown,
   ChevronUp, AlertTriangle, BarChart3, PieChart, Wallet, CreditCard,
   Building2, UtensilsCrossed, Car, ShoppingBag, Zap, Target, FileSpreadsheet, FileText,
-  CheckCircle2, Users, Pencil, Loader2, Sparkles,
+  CheckCircle2, Users, Pencil, Loader2, Sparkles, Info,
 } from "lucide-react";
 import { generateProfessionalExcel } from "@/utils/generateExcel";
 import { generateProfessionalPDF } from "@/utils/generatePDF";
@@ -59,6 +59,8 @@ interface LineItem {
 interface Section {
   title: string;
   kind?: SectionKind;
+  /** Short explanation shown under the section title. */
+  note?: string;
   icon: React.ElementType;
   items: LineItem[];
   total: number;
@@ -165,6 +167,12 @@ const CollapsibleSection = ({
           <div className="text-left">
             <h3 className="font-semibold text-foreground text-sm sm:text-base">{section.title}</h3>
             <p className="text-xs text-muted-foreground">{section.items.length} items</p>
+            {section.note && (
+              <p className="mt-1 flex items-start gap-1 text-xs text-sky-600 dark:text-sky-400">
+                <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
+                <span>{section.note}</span>
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -490,6 +498,7 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
       {
         title: tr(STR.thirdPartyPayments, isEnglish),
         kind: "thirdParty",
+        note: tr(STR.thirdPartyPageNote, isEnglish),
         icon: Users,
         items: thirdPartyLineItems,
         total: totalThirdParty,
@@ -612,12 +621,16 @@ const Results = () => {
   const [savingReassign, setSavingReassign] = useState(false);
   const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
 
-  // A new visit to /results (from a statement, a client, or the menu) replaces what is shown.
+  // A new visit to /results (from a statement, a client, the menu, or a page reload) replaces what is
+  // shown. The copy handed over by the previous page can be older than what is saved (a category was
+  // changed since, or the browser kept it across a reload), so a saved statement is always re-read.
   useEffect(() => {
     const st = (location.state as any) || {};
     setAnalysisId(st.analysisId);
     setClientId(st.clientId ?? null);
     setRawResults(st.results);
+    if (st.analysisId) openStatement(st.analysisId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
 
   useEffect(() => {
@@ -792,7 +805,7 @@ const Results = () => {
       const topCategory = String(topItem?.desc || topItem?.category || "");
 
       if (analysisId) {
-        const { error } = await supabase
+        const { data: updated, error } = await supabase
           .from("analyses")
           .update({
             full_analysis: cloned,
@@ -804,11 +817,16 @@ const Results = () => {
             total_spent: totalSpent,
             top_category: topCategory,
           })
-          .eq("id", analysisId);
+          .eq("id", analysisId)
+          .select("id");
         if (error) throw error;
+        // No row changed means the database refused it (no permission): never report it as saved.
+        if (!updated || updated.length === 0) throw new Error(tr(STR.reassignNotSaved, isEnglish));
       }
 
       setRawResults(cloned);
+      // Keep the browser's copy of this page in step, so a reload shows the change too.
+      navigate("/results", { replace: true, state: { results: cloned, analysisId, clientId } });
       setReassignItem(null);
       toast({ title: "✅", description: tr(STR.reassignSuccess, isEnglish) });
     } catch (err) {

@@ -229,6 +229,14 @@ export const STR = {
   // Results.tsx page chrome
   profitLoss: { en: "Profit & Loss", es: "Estado de Resultados" },
   profitLossNav: { en: "Profit & Loss (P&L)", es: "Estado de resultados (P&L)" },
+  thirdPartyPageNote: {
+    en: "This is part of the analysis, but it is for information only: these payments are already counted in the categories above (they are not added again) and help track 1099 forms.",
+    es: "Esto hace parte del análisis, pero es solo informativo: estos pagos ya están contados en las categorías de arriba (no se suman de nuevo) y sirven para el control de los formularios 1099.",
+  },
+  reassignNotSaved: {
+    en: "The change was not saved: you don't have permission to edit this statement.",
+    es: "No se guardó el cambio: no tienes permiso para modificar este extracto.",
+  },
   showPnlOf: { en: "Showing:", es: "Ver estado de:" },
   consolidatedReport: { en: "Consolidated report", es: "Reporte consolidado" },
   loadingStatement: { en: "Loading the profit & loss…", es: "Cargando el estado de resultados…" },
