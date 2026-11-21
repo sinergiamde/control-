@@ -17,7 +17,7 @@ IDIOMA DE SALIDA: la aplicación permite ver cada reporte en inglés o en españ
 
 PASO 1 — DETECTA la industria del negocio (Construcción/Drywall/Remodelación, Transporte/Trucking, Servicios de limpieza, Retail/Reventa, Servicios profesionales, u "Negocio General" si no está claro) según los proveedores y patrones de transacciones. Ajusta la clasificación de gastos según esa industria.
 
-PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacción, procesa el extracto completo). El campo "category" de cada línea DEBE ser EXACTAMENTE una de las etiquetas en INGLÉS de la lista correspondiente de abajo (no inventes etiquetas nuevas, no las traduzcas; si de verdad ninguna aplica, usa "Other (specify)" y agrega una alerta).
+PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacción, procesa el extracto completo). El campo "category" de cada línea DEBE ser EXACTAMENTE una de las etiquetas en INGLÉS de la lista correspondiente de abajo (no inventes etiquetas nuevas, no las traduzcas; si de verdad ninguna aplica, usa la categoría "Other … (specify)" de esa sección ("Other income (specify)", "Other cost of sales (specify)", "Other operating expense (specify)" u "Other personal (specify)") y en "detail_en"/"detail_es" escribe qué es exactamente).
 
 === INCOME (revenues) — category debe ser una de: ===
 - "Bank transfer"
@@ -32,10 +32,9 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 - "Materials"
 - "Supplies"
 - "Storage"
-- "Startup and moving costs"
 - "Subcontractor costs"
-- "Tolls (work)"
 - "Permits"
+- "Other cost of sales (specify)"
 
 === OPEX (gastos operativos) — category debe ser una de: ===
 - "Payroll"
@@ -66,6 +65,10 @@ PASO 2 — Clasifica CADA transacción del extracto (no omitas ninguna transacci
 - "Meals (work — fast food/coffee/snacks)"
 - "Credit card payment"
 - "Business loan"
+- "Startup and moving costs"
+- "Tolls (work)"
+- "Uniforms (work)"
+- "Other operating expense (specify)"
 
 === FEES (comisiones/cargos bancarios) — category debe ser una de: ===
 - "Bank fees"
@@ -530,7 +533,12 @@ serve(async (req) => {
       });
     }
 
-    const { fileBase64, mediaType, fileName } = await req.json();
+    const { fileBase64, mediaType, fileName, clientContext } = await req.json();
+    // What the accountant recorded about the business (industry, what it sells) helps classify its
+    // transactions; it never replaces what the statement says.
+    const contextNote = typeof clientContext === "string" && clientContext.trim()
+      ? ` Contexto del cliente registrado por el contador (úsalo para entender el negocio, nunca para inventar transacciones): ${clientContext.trim().slice(0, 1500)}`
+      : "";
 
     if (!fileBase64 || typeof fileBase64 !== "string") {
       return new Response(JSON.stringify({ error: "Falta el archivo (fileBase64)." }), {
@@ -560,7 +568,7 @@ serve(async (req) => {
         },
         {
           type: "text",
-          text: `Documento: ${fileName || "estado de cuenta"}. Analiza este extracto bancario completo y clasifica cada transacción según las instrucciones.`,
+          text: `Documento: ${fileName || "estado de cuenta"}. Analiza este extracto bancario completo y clasifica cada transacción según las instrucciones.${contextNote}`,
         },
       ];
     } else {
@@ -568,7 +576,7 @@ serve(async (req) => {
       userContent = [
         {
           type: "text",
-          text: `Documento: ${fileName || "estado de cuenta"}\n\nContenido:\n\n${text.slice(0, 180000)}\n\nAnaliza este extracto bancario completo y clasifica cada transacción según las instrucciones.`,
+          text: `Documento: ${fileName || "estado de cuenta"}\n\nContenido:\n\n${text.slice(0, 180000)}\n\nAnaliza este extracto bancario completo y clasifica cada transacción según las instrucciones.${contextNote}`,
         },
       ];
     }

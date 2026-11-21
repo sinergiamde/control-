@@ -21,6 +21,9 @@ export const CATEGORY_ES: Record<string, string> = {
   "Startup and moving costs": "Costos de inicio y mudanza",
   "Subcontractor costs": "Costos de subcontratistas",
   "Tolls (work)": "Peajes (trabajo)",
+  "Uniforms (work)": "Uniformes (trabajo)",
+  "Other cost of sales (specify)": "Otro costo de ventas (especificar)",
+  "Other operating expense (specify)": "Otro gasto operativo (especificar)",
   "Permits": "Permisos",
   // OPEX
   "Payroll": "Nómina",
@@ -229,6 +232,15 @@ export const STR = {
   // Results.tsx page chrome
   profitLoss: { en: "Profit & Loss", es: "Estado de Resultados" },
   profitLossNav: { en: "Profit & Loss (P&L)", es: "Estado de resultados (P&L)" },
+  personalNotDeductibleNote: {
+    en: "Note: the expenses in this category are not considered deductible expenses.",
+    es: "Nota: los gastos ubicados en esta categoría no son considerados gastos deducibles.",
+  },
+  thirdPartyBoxTitle: { en: "Additional information — Third Party Payments (1099)", es: "Información adicional — Pagos a Terceros (1099)" },
+  thirdPartyBoxDesc: {
+    en: "This box is not part of the P&L: these payments are already counted in the categories above. It only lists them one by one to know who may need a 1099.",
+    es: "Esta caja no hace parte del estado de resultados: estos pagos ya están contados en las categorías de arriba. Solo los lista uno por uno para saber a quién puede corresponder un formulario 1099.",
+  },
   specifyOtherLabel: { en: "What is it exactly?", es: "¿Qué es exactamente?" },
   specifyOtherPlaceholder: { en: "e.g. sale of used equipment, gift to a relative…", es: "ej. venta de equipo usado, regalo a un familiar…" },
   specifyOtherHelp: {
@@ -504,7 +516,7 @@ export const STR = {
   // Analyze statement (home)
   analyzeNav: { en: "Analyze statement", es: "Analizar extracto" },
   analyzeTitle: { en: "Analyze statement", es: "Analizar extracto" },
-  analyzeDesc: { en: "Upload your bank statement PDF and see the report in seconds.", es: "Sube el PDF de tu extracto bancario y en segundos verás el reporte." },
+  analyzeDesc: { en: "Upload your bank statement (PDF, CSV or Excel) and see the report in 1 to 3 minutes.", es: "Sube tu extracto bancario (PDF, CSV o Excel) y en 1 a 3 minutos verás el reporte." },
   whichClientLabel: { en: "Which client is this statement for?", es: "¿De qué cliente es este extracto?" },
   newClientNameLabel: { en: "Client name", es: "Nombre del cliente" },
   firstClientHint: { en: "Your first statement: just type the client's name (it can be your own business).", es: "Tu primer extracto: solo escribe el nombre del cliente (puede ser tu propio negocio)." },
@@ -582,7 +594,7 @@ export const STR = {
   clientPhoneLabel: { en: "Client phone", es: "Teléfono del cliente" },
   clientEmailInvalid: { en: "Enter a valid email or leave it empty.", es: "Escribe un correo válido o déjalo vacío." },
   saveClientButton: { en: "Save client", es: "Guardar cliente" },
-  noCompanyGroup: { en: "No company", es: "Sin empresa" },
+  noCompanyGroup: { en: "No group", es: "Sin grupo" },
   newCompanyOption2: { en: "＋ New company…", es: "＋ Nueva empresa…" },
   dbUpdateNeeded: { en: "The database update for this form is pending. Ask the administrator to apply it.", es: "Falta aplicar la actualización de la base de datos para este formulario. Avísale al administrador." },
   // Forgot / provisional password

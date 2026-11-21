@@ -12,6 +12,8 @@ import ClientChoice, { NEW_CLIENT, initialClientChoice, resolveClientChoice } fr
 import { UploadLockedCard, useTrialStatus } from "@/components/SubscribePrompt";
 import { STR, tr } from "@/utils/i18n";
 import { normalizeAnalysisTransactions } from "@/utils/reportTypes";
+import { fileSha256, statementKey } from "@/utils/statementIdentity";
+import { fetchClientProfile, industryLabel } from "@/utils/clientProfile";
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/integrations/supabase/config";
 
 const ANALYZE_API_URL = `${SUPABASE_URL}/functions/v1/analyze-statement`;
@@ -157,8 +159,32 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
     e.target.value = "";
   };
 
+  /** "This exact statement is already in the system" — with whose and which period, when visible. */
+  const duplicateError = (found?: { period?: string | null; clients?: { name?: string } | null } | null) => {
+    const where = found ? [found.clients?.name, found.period].filter(Boolean).join(" · ") : "";
+    return new Error(t("duplicateStatement").replace("{where}", where ? ` (${where})` : ""));
+  };
+  const findStatement = async (column: "file_hash" | "statement_key", value: string) => {
+    const { data } = await supabase.from("analyses").select("period, clients(name)").eq(column, value).limit(1);
+    return (data as any[] | null)?.[0] ?? null;
+  };
+
   const analyzeOne = async (file: File, clientId: string) => {
+    // The same file can't be analyzed twice: checked before spending on the AI.
+    const fileHash = await fileSha256(file);
+    if (fileHash) {
+      const found = await findStatement("file_hash", fileHash);
+      if (found) throw duplicateError(found);
+    }
     const fileBase64 = await fileToBase64(file, t("couldNotReadFile"));
+    const profile = await fetchClientProfile(clientId);
+    const clientContext = profile
+      ? [
+          `Empresa: ${profile.name}`,
+          profile.industry ? `Industria: ${industryLabel(profile.industry, false)}` : "",
+          profile.description ? `Producto o servicio: ${profile.description}` : "",
+        ].filter(Boolean).join(". ")
+      : "";
     let response: Response;
     try {
       response = await fetch(ANALYZE_API_URL, {
@@ -172,6 +198,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
           mediaType: file.type || "application/octet-stream",
           fileName: file.name,
           lang,
+          clientContext,
         }),
       });
     } catch (networkError) {
@@ -219,6 +246,13 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
       src.alerts_es = [...(Array.isArray(src.alerts_es) ? src.alerts_es : legacyAlerts), ...notesEs];
     }
 
+    // A re-downloaded copy of a statement already in the system (same account, period and balances).
+    const key = statementKey(data);
+    if (key) {
+      const found = await findStatement("statement_key", key);
+      if (found) throw duplicateError(found);
+    }
+
     const revenues = Array.isArray(src?.revenues) ? src.revenues : [];
     const cogs = Array.isArray(src?.cogs) ? src.cogs : [];
     const opex = Array.isArray(src?.opex) ? src.opex : [];
@@ -248,11 +282,15 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
         original_filename: file.name,
         total_spent: totalSpent,
         top_category: getTopCategory(src),
+        file_hash: fileHash,
+        statement_key: key,
       })
       .select("id")
       .single();
     if (dbError) {
       console.error("Insert error:", dbError);
+      // The database refuses a second copy even when it belongs to a client this person can't see.
+      if (dbError.code === "23505" || /duplicate key|unique/i.test(dbError.message)) throw duplicateError(null);
       throw new Error(dbError.message);
     }
     return { data, analysisId: inserted?.id as string | undefined };
@@ -450,8 +488,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
             clients={targets}
             value={targetId}
             onChange={setTargetId}
-            newName={newClientName}
-            onNewNameChange={setNewClientName}
+            onClientCreated={(c) => onClientCreated?.(c)}
             label={tr(STR.whichClientLabel, isEnglish)}
             allowNew={canManageClients}
             disabled={loading}

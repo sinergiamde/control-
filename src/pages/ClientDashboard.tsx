@@ -6,7 +6,10 @@ import {
 import {
   AlertTriangle, ArrowLeft, BarChart3, Building2, ChevronRight, CornerDownRight, Crown, Download, Eye,
   FileSpreadsheet, FileText, Loader2, Pencil, PieChart as PieChartIcon, Trash2, TrendingDown, TrendingUp, Upload, Wallet,
+  Briefcase, Mail, Phone, User as UserIcon,
 } from "lucide-react";
+import ClientFormDialog from "@/components/ClientFormDialog";
+import { fetchClientProfile, industryLabel, type ClientProfile } from "@/utils/clientProfile";
 import { useNavGuard } from "@/components/AppLayout";
 import ChatBot from "@/components/ChatBot";
 import PeriodPicker, { fmtMonth, selectionLabel, selectionToInterval, type PeriodSelection } from "@/components/PeriodPicker";
@@ -74,6 +77,11 @@ const ClientDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selection, setSelection] = useState<PeriodSelection>({ kind: "all" });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // The client's profile (company, owner, industry, what it sells, contact, whether it has COGS).
+  const [profile, setProfile] = useState<ClientProfile | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  // The statements list starts folded: it can be long.
+  const [statementsOpen, setStatementsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState<"pdf" | "excel" | null>(null);
   const [hasPendingFiles, setHasPendingFiles] = useState(false);
@@ -95,6 +103,7 @@ const ClientDashboard = () => {
     setNodes(allNodes);
     const ids = [clientId, ...allNodes.filter((n) => n.parent_id === clientId).map((n) => n.id)];
     // RLS scopes this to the clients this person may see.
+    fetchClientProfile(clientId).then(setProfile);
     const [{ data }, { data: profiles }] = await Promise.all([
       supabase
         .from("analyses")
@@ -117,14 +126,16 @@ const ClientDashboard = () => {
 
   // Everything inside the chosen period, transaction by transaction (so a custom Mar 15 – Apr 10
   // range counts exactly those days, not whole statements).
+  // Without cost of sales, the client's COGS-type costs are shown as operating expenses.
+  const noCogs = profile?.has_cogs === false;
   const all = useMemo(
-    () => rows.map((r) => filterStatement(r, null)).filter((s): s is FilteredStatement => !!s),
-    [rows]
+    () => rows.map((r) => filterStatement(r, null, { noCogs })).filter((s): s is FilteredStatement => !!s),
+    [rows, noCogs]
   );
   const interval = useMemo(() => selectionToInterval(selection), [selection]);
   const inPeriod = useMemo(
-    () => (interval ? rows.map((r) => filterStatement(r, interval)).filter((s): s is FilteredStatement => !!s) : all),
-    [rows, interval, all]
+    () => (interval ? rows.map((r) => filterStatement(r, interval, { noCogs })).filter((s): s is FilteredStatement => !!s) : all),
+    [rows, interval, all, noCogs]
   );
   const txns = useMemo(() => inPeriod.flatMap((s) => s.txns), [inPeriod]);
   const totals = useMemo(() => totalsOf(txns), [txns]);
@@ -348,6 +359,53 @@ const ClientDashboard = () => {
           </Button>
         </div>
 
+        {/* The client's profile, as saved in its form. */}
+        <Card className="neon-border bg-card">
+          <CardContent className="p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3 text-sm min-w-0">
+              <p className="flex items-center gap-1.5 min-w-0"><UserIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">{isEnglish ? "Owner:" : "Dueño:"}</span>
+                <span className="truncate font-medium">{profile?.owner_name || "—"}</span></p>
+              <p className="flex items-center gap-1.5 min-w-0"><Briefcase className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">{isEnglish ? "Industry:" : "Industria:"}</span>
+                <span className="truncate font-medium">{industryLabel(profile?.industry, isEnglish) || "—"}</span></p>
+              <p className="flex items-center gap-1.5 min-w-0"><BarChart3 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">COGS:</span>
+                <span className="truncate font-medium">{profile?.has_cogs === false ? (isEnglish ? "No (costs shown as OpEx)" : "No (los costos van en OpEx)") : (isEnglish ? "Yes" : "Sí")}</span></p>
+              <p className="flex items-center gap-1.5 min-w-0"><Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate">{profile?.email || "—"}</span></p>
+              <p className="flex items-center gap-1.5 min-w-0"><Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate">{profile?.phone || "—"}</span></p>
+              <p className="sm:col-span-2 lg:col-span-3 text-muted-foreground">
+                <span className="font-medium text-foreground">{isEnglish ? "Product or service: " : "Producto o servicio: "}</span>
+                {profile?.description || "—"}
+              </p>
+            </div>
+            {canManageClients && profile && (
+              <Button size="sm" variant="outline" className="shrink-0 gap-1" onClick={() => setProfileOpen(true)}>
+                <Pencil className="h-3.5 w-3.5" />
+                {isEnglish ? "Edit profile" : "Editar perfil"}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+        {(!profile?.owner_name || !profile?.industry || !profile?.description || !profile?.email || !profile?.phone) && canManageClients && profile && (
+          <p className="-mt-3 text-xs text-amber-600 dark:text-amber-400">
+            {isEnglish ? "This client's profile is incomplete: click “Edit profile” to fill it in." : "El perfil de este cliente está incompleto: haz clic en “Editar perfil” para completarlo."}
+          </p>
+        )}
+        <ClientFormDialog
+          open={profileOpen}
+          onOpenChange={setProfileOpen}
+          client={profile}
+          takenNames={nodes.filter((n) => n.id !== clientId).map((n) => n.name)}
+          onSaved={(saved) => {
+            setProfile(saved);
+            setNodes((prev) => prev.map((n) => (n.id === saved.id ? { ...n, name: saved.name } : n)));
+            toast({ title: "✅", description: isEnglish ? "Client profile saved." : "Perfil del cliente guardado." });
+          }}
+        />
+
         {subCompanies.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
             {subCompanies.map((s) => (
@@ -537,10 +595,14 @@ const ClientDashboard = () => {
         {/* Statements behind the numbers */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 flex-wrap">
-            <CardTitle className="text-base flex items-center gap-2">
-              <FileText className="h-4 w-4 text-primary" />
-              {tr(STR.statementsOfCompany, isEnglish)} — {selectionLabel(selection, isEnglish)}
-            </CardTitle>
+            <button type="button" onClick={() => setStatementsOpen((o) => !o)} className="text-left">
+              <CardTitle className="text-base flex items-center gap-2">
+                <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${statementsOpen ? "rotate-90" : ""}`} />
+                <FileText className="h-4 w-4 text-primary" />
+                {tr(STR.statementsOfCompany, isEnglish)} — {selectionLabel(selection, isEnglish)}
+                <span className="text-xs font-normal text-muted-foreground">({statements.length})</span>
+              </CardTitle>
+            </button>
             {canDelete && selectedIds.size > 0 && (
               <Button
                 size="sm" variant="destructive"
@@ -552,7 +614,7 @@ const ClientDashboard = () => {
               </Button>
             )}
           </CardHeader>
-          <CardContent>
+          {statementsOpen && <CardContent>
             {statements.length === 0 ? (
               <p className="text-muted-foreground text-center py-6">{tr(STR.noStatements, isEnglish)}</p>
             ) : (
@@ -634,7 +696,7 @@ const ClientDashboard = () => {
                 </Table>
               </div>
             )}
-          </CardContent>
+          </CardContent>}
         </Card>
 
         <div ref={uploaderRef} className="scroll-mt-20">
@@ -672,7 +734,7 @@ const ClientDashboard = () => {
                 <SelectContent className="max-h-72">
                   {(Object.keys(REASSIGN_TAXONOMY) as TransactionList[]).map((list) => (
                     <SelectGroup key={list}>
-                      <SelectLabel>{listLabel(list)}</SelectLabel>
+                      <SelectLabel className="sticky top-0 z-10 bg-primary/15 text-primary font-bold uppercase tracking-wide text-[11px] py-1.5">{listLabel(list)}</SelectLabel>
                       {REASSIGN_TAXONOMY[list].map((c) => (
                         <SelectItem key={`${list}::${c}`} value={`${list}::${c}`}>{translateCategory(c, isEnglish)}</SelectItem>
                       ))}

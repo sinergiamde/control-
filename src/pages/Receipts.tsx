@@ -420,8 +420,7 @@ const Receipts = () => {
               clients={clients}
               value={clientValue}
               onChange={setClientValue}
-              newName={newClientName}
-              onNewNameChange={setNewClientName}
+              onClientCreated={(c) => setClients((prev) => [...prev, c].sort((x, y) => x.name.localeCompare(y.name)))}
               label={tr(STR.whichClientReceiptLabel, isEnglish)}
               allowNew={canManageClients}
               disabled={saving}

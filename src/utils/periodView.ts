@@ -59,6 +59,7 @@ export const mergeStatements = (filtered: FilteredStatement[], period: { en: str
     annualSummary: tagged.flatMap(({ src }) => (Array.isArray(src?.annualSummary) ? src.annualSummary : [])),
   };
   for (const list of LISTS) merged[list] = tagged.flatMap(({ src }) => (Array.isArray(src?.[list]) ? src[list] : []));
+  if (tagged.some(({ src }) => src?.noCogs)) merged.noCogs = true;
 
   // The bank's own totals still add up across whole statements: deposits and each withdrawal type are
   // summed, the opening balance is the first statement's and the closing one the last's. When a

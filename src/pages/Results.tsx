@@ -43,7 +43,8 @@ import { balanceDates, balanceLabel } from "@/utils/balanceDates";
 import PeriodPicker, { selectionLabel, selectionToInterval, type PeriodSelection } from "@/components/PeriodPicker";
 import { filterStatement, monthKey, statementRange, type FilteredStatement, type StatementRow } from "@/utils/statementPeriod";
 import { deserializeSelection, mergeStatements, selectionForRange, serializeSelection } from "@/utils/periodView";
-import { moveTransaction } from "@/utils/reassign";
+import { checkNumberOf, documentTransaction, moveTransaction } from "@/utils/reassign";
+import { fetchClientProfile, type ClientProfile } from "@/utils/clientProfile";
 
 interface LineItem {
   name: string;
@@ -61,6 +62,11 @@ interface LineItem {
    * next to it — the same key Receipts stores when the receipt is linked. */
   txnKey?: string;
   receipt?: ReceiptRow;
+  /** Who a check (or any payment) went to and what for, as documented by a person. */
+  payee?: string;
+  purpose?: string;
+  /** The line is a check ("CHECK 2550"): it can be documented. */
+  isCheck?: boolean;
 }
 
 interface Section {
@@ -68,6 +74,8 @@ interface Section {
   kind?: SectionKind;
   /** Short explanation shown under the section title. */
   note?: string;
+  /** Warning shown at the bottom of the section. */
+  footnote?: string;
   icon: React.ElementType;
   items: LineItem[];
   total: number;
@@ -151,11 +159,53 @@ const AnimatedNumber = ({ value, prefix = "$", delay = 0 }: { value: number; pre
   );
 };
 
+const fmtMoney = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 const CollapsibleSection = ({
-  section, index, onReassign, receiptLabel,
-}: { section: Section; index: number; onReassign?: (item: LineItem) => void; receiptLabel: string }) => {
+  section, index, onReassign, onDocument, receiptLabel, isEnglish,
+}: {
+  section: Section;
+  index: number;
+  onReassign?: (item: LineItem) => void;
+  onDocument?: (item: LineItem) => void;
+  receiptLabel: string;
+  isEnglish: boolean;
+}) => {
   const [open, setOpen] = useState(false);
+  // Category chips narrow the list to one or more categories and show their total; check boxes pick
+  // any lines and add them up.
+  const [catFilter, setCatFilter] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<number>>(new Set());
   const Icon = section.icon;
+
+  const categories = useMemo(() => {
+    const map = new Map<string, { count: number; total: number }>();
+    section.items.forEach((item) => {
+      const key = item.category || (isEnglish ? "No category" : "Sin categoría");
+      const cur = map.get(key) || { count: 0, total: 0 };
+      map.set(key, { count: cur.count + 1, total: cur.total + item.amount });
+    });
+    return [...map.entries()].sort((a, b) => b[1].total - a[1].total);
+  }, [section.items, isEnglish]);
+  const shown = section.items
+    .map((item, i) => ({ item, i }))
+    .filter(({ item }) => catFilter.size === 0 || catFilter.has(item.category || (isEnglish ? "No category" : "Sin categoría")));
+  const filteredTotal = shown.reduce((sum, { item }) => sum + item.amount, 0);
+  const pickedTotal = [...picked].reduce((sum, i) => sum + (section.items[i]?.amount || 0), 0);
+  const toggleCat = (key: string) =>
+    setCatFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const togglePick = (i: number) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   return (
     <div
@@ -195,9 +245,50 @@ const CollapsibleSection = ({
 
       {open && (
         <div className="border-t border-border/50 bg-background/50 animate-fade-in">
+          {section.items.length > 1 && categories.length > 0 && (
+            <div className="px-5 pt-3 pb-2 space-y-2 border-b border-border/30">
+              <p className="text-[11px] text-muted-foreground">
+                {isEnglish ? "Click a category to see only its transactions and their total:" : "Haz clic en una categoría para ver solo sus transacciones y su total:"}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {categories.map(([key, info]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleCat(key)}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                      catFilter.has(key) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted/40 text-foreground hover:border-primary/60"
+                    }`}
+                  >
+                    {key} · {info.count} · <span className="font-semibold">{fmtMoney(info.total)}</span>
+                  </button>
+                ))}
+              </div>
+              {catFilter.size > 0 && (
+                <div className="flex items-center justify-between rounded-md bg-primary/10 px-3 py-1.5 text-sm">
+                  <span className="text-foreground">
+                    {isEnglish ? "Total of" : "Total de"} <span className="font-semibold">{[...catFilter].join(" + ")}</span> ({shown.length})
+                  </span>
+                  <span className="flex items-center gap-3">
+                    <span className="font-bold text-primary">{fmtMoney(filteredTotal)}</span>
+                    <button type="button" onClick={() => setCatFilter(new Set())} className="text-xs text-muted-foreground hover:text-foreground underline">
+                      {isEnglish ? "Show all" : "Ver todas"}
+                    </button>
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="divide-y divide-border/30">
-            {section.items.map((item, i) => (
-              <div key={i} className="flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors group/item">
+            {shown.map(({ item, i }) => (
+              <div key={i} className={`flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors group/item ${picked.has(i) ? "bg-primary/5" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={picked.has(i)}
+                  onChange={() => togglePick(i)}
+                  className="mr-3 h-4 w-4 shrink-0 accent-[hsl(var(--primary))] cursor-pointer"
+                  aria-label={isEnglish ? "Select to add up" : "Seleccionar para sumar"}
+                />
                 <div className="flex-1 min-w-0 pr-4">
                   <p className="text-sm text-foreground truncate">{item.name}</p>
                   <div className="flex items-center gap-2 mt-0.5">
@@ -208,6 +299,24 @@ const CollapsibleSection = ({
                     )}
                     {item.detail && <p className="text-xs text-muted-foreground truncate">{item.detail}</p>}
                   </div>
+                  {item.isCheck && onDocument && item.sourceList !== undefined && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onDocument(item); }}
+                      className={`mt-1 inline-flex max-w-full items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${
+                        item.payee
+                          ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+                          : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
+                      }`}
+                    >
+                      <FileText className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {item.payee
+                          ? `${item.payee}${item.purpose ? ` · ${item.purpose}` : ""}`
+                          : isEnglish ? "Document payee and purpose" : "Documentar destinatario y propósito"}
+                      </span>
+                    </button>
+                  )}
                   {item.receipt && (
                     <button
                       type="button"
@@ -238,10 +347,27 @@ const CollapsibleSection = ({
               </div>
             ))}
           </div>
+          {picked.size > 0 && (
+            <div className="sticky bottom-0 flex items-center justify-between gap-3 px-5 py-2.5 bg-primary text-primary-foreground text-sm">
+              <span>{isEnglish ? "Selected" : "Seleccionadas"}: {picked.size}</span>
+              <span className="flex items-center gap-3">
+                <span className="font-bold">{isEnglish ? "Total" : "Total"}: {fmtMoney(pickedTotal)}</span>
+                <button type="button" onClick={() => setPicked(new Set())} className="text-xs underline opacity-90 hover:opacity-100">
+                  {isEnglish ? "Clear" : "Limpiar"}
+                </button>
+              </span>
+            </div>
+          )}
           <div className="flex items-center justify-between px-5 py-3 bg-muted/40 font-semibold text-sm">
             <span className="text-primary">{section.totalLabel}</span>
             <span className="text-primary">${section.total.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
           </div>
+        </div>
+      )}
+      {section.footnote && (
+        <div className="flex items-start gap-2 border-t border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{section.footnote}</span>
         </div>
       )}
     </div>
@@ -309,7 +435,11 @@ const tagList = (items: any[] = [], list: TransactionList) =>
 const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number, isEnglish = true): LineItem[] =>
   items.map((item) => {
     const amount = toNumber(item?.amt ?? item?.amount);
-    const detailParts = [item?.date, pickText(item, "detail", isEnglish)].filter(Boolean);
+    const documented = [
+      item?.payee ? `${isEnglish ? "Payee" : "Destinatario"}: ${item.payee}` : "",
+      item?.purpose ? `${isEnglish ? "Purpose" : "Propósito"}: ${item.purpose}` : "",
+    ].filter(Boolean);
+    const detailParts = [item?.date, pickText(item, "detail", isEnglish), ...documented].filter(Boolean);
 
     return {
       name: item?.desc || item?.name || "Unknown",
@@ -320,6 +450,9 @@ const normalizeAnalysisItems = (items: any[] = [], totalRevenue: number, isEngli
       sourceList: item?.__list,
       sourceIndex: typeof item?.__idx === "number" ? item.__idx : undefined,
       txnKey: txnKey(item?.date, item?.desc || item?.name, amount),
+      payee: item?.payee ? String(item.payee) : undefined,
+      purpose: item?.purpose ? String(item.purpose) : undefined,
+      isCheck: !!checkNumberOf(item?.desc || item?.name),
     };
   });
 
@@ -497,6 +630,7 @@ const transformAPIResponse = (raw: any, isEnglish: boolean): ResultsData => {
         title: tr(STR.otherExpensesDeductions, isEnglish),
         kind: "personal",
         icon: ShoppingBag,
+        footnote: tr(STR.personalNotDeductibleNote, isEnglish),
         items: personalSectionItems,
         total: totalPersonal,
         totalLabel: tr(STR.totalPersonal, isEnglish),
@@ -613,7 +747,7 @@ interface StatementOption {
 const Results = () => {
   const { t, lang } = useLanguage();
   const isEnglish = lang === "en";
-  const { user } = useAuth();
+  const { user, canManageClients } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -631,6 +765,14 @@ const Results = () => {
   const [selection, setSelection] = useState<PeriodSelection | null>(deserializeSelection(navState.period));
   const [pendingAnalysisId, setPendingAnalysisId] = useState<string | null>(navState.analysisId ?? null);
   const [clientRows, setClientRows] = useState<StatementRow[] | null>(null);
+  // The chosen client's profile: whether it has cost of sales decides where those costs show.
+  const [clientProfile, setClientProfile] = useState<ClientProfile | null>(null);
+  const [savingCogs, setSavingCogs] = useState(false);
+  // Documenting who a check was paid to and what for.
+  const [docItem, setDocItem] = useState<LineItem | null>(null);
+  const [docPayee, setDocPayee] = useState("");
+  const [docPurpose, setDocPurpose] = useState("");
+  const [savingDoc, setSavingDoc] = useState(false);
   const [reassignItem, setReassignItem] = useState<LineItem | null>(null);
   const [reassignTarget, setReassignTarget] = useState<string>("");
   const [reassignSpecify, setReassignSpecify] = useState("");
@@ -695,12 +837,25 @@ const Results = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientKey, handedReport]);
 
+  useEffect(() => {
+    setClientProfile(null);
+    if (!clientKey || clientKey === NO_CLIENT || handedReport) return;
+    let cancelled = false;
+    fetchClientProfile(clientKey).then((profile) => {
+      if (!cancelled) setClientProfile(profile);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientKey, handedReport]);
+  const noCogs = clientProfile?.has_cogs === false;
+
   // What is on screen: the transactions of every statement inside the dates, as one analysis.
   const view = useMemo(() => {
     if (handedReport) return { raw: handedReport, analysisId: undefined as string | undefined, count: 0 };
     if (!clientRows || !selection) return null;
     const filtered = clientRows
-      .map((row) => filterStatement(row, selectionToInterval(selection)))
+      .map((row) => filterStatement(row, selectionToInterval(selection), { noCogs }))
       .filter((f): f is FilteredStatement => !!f);
     if (filtered.length === 0) return { raw: null, analysisId: undefined, count: 0 };
     const n = filtered.length;
@@ -710,7 +865,7 @@ const Results = () => {
       analysisId: n === 1 ? filtered[0].row.id : undefined,
       count: n,
     };
-  }, [handedReport, clientRows, selection]);
+  }, [handedReport, clientRows, selection, noCogs]);
   const rawResults = view?.raw ?? null;
   const analysisId = view?.analysisId;
   const clientId = clientKey && clientKey !== NO_CLIENT ? clientKey : null;
@@ -895,6 +1050,53 @@ const Results = () => {
     setReassignSpecify("");
   };
 
+  const changeHasCogs = async (value: string) => {
+    if (!clientProfile) return;
+    setSavingCogs(true);
+    const has_cogs = value === "yes";
+    const { data, error } = await supabase.from("clients").update({ has_cogs }).eq("id", clientProfile.id).select("id");
+    setSavingCogs(false);
+    if (error || !data?.length) {
+      toast({ title: "Error", description: error?.message || tr(STR.reassignNotSaved, isEnglish), variant: "destructive" });
+      return;
+    }
+    setClientProfile({ ...clientProfile, has_cogs });
+  };
+
+  const openDocument = (item: LineItem) => {
+    setDocItem(item);
+    setDocPayee(item.payee || "");
+    setDocPurpose(item.purpose || "");
+  };
+
+  const saveDocument = async () => {
+    if (!docItem || docItem.sourceList === undefined || docItem.sourceIndex === undefined) return;
+    setSavingDoc(true);
+    try {
+      const viewSource = rawResults?.analysis ?? rawResults;
+      const rawItem = viewSource?.[docItem.sourceList]?.[docItem.sourceIndex];
+      const rowId: string | undefined = rawItem?._analysisId ?? analysisId;
+      const row = clientRows?.find((r) => r.id === rowId);
+      if (!rawItem || !row) throw new Error(tr(STR.reassignError, isEnglish));
+      const full = documentTransaction(
+        row.full_analysis,
+        { list: docItem.sourceList, rawDate: String(rawItem.date ?? ""), desc: String(rawItem.desc || rawItem.name || ""), amount: toNumber(rawItem.amt ?? rawItem.amount) },
+        docPayee,
+        docPurpose
+      );
+      const { data: updated, error } = await supabase.from("analyses").update({ full_analysis: full }).eq("id", row.id).select("id");
+      if (error) throw error;
+      if (!updated || updated.length === 0) throw new Error(tr(STR.reassignNotSaved, isEnglish));
+      setClientRows((prev) => (prev || []).map((r) => (r.id === row.id ? { ...r, full_analysis: full } : r)));
+      setDocItem(null);
+      toast({ title: "✅", description: isEnglish ? "Payee and purpose saved." : "Destinatario y propósito guardados." });
+    } catch (err) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : tr(STR.reassignError, isEnglish), variant: "destructive" });
+    } finally {
+      setSavingDoc(false);
+    }
+  };
+
   const reassignNeedsSpecify = !!reassignTarget && needsSpecify(reassignTarget.slice(reassignTarget.indexOf("::") + 2));
 
   const handleConfirmReassign = async () => {
@@ -958,7 +1160,7 @@ const Results = () => {
 
   const summaryCards = [
     { label: tr(STR.totalIncome, isEnglish), value: results.totalRevenue, icon: DollarSign, color: "hsl(var(--primary))", sub: "100%" },
-    { label: "COGS", value: results.totalCOGS, icon: Building2, color: "hsl(38, 90%, 55%)", sub: `${((results.totalCOGS / results.totalRevenue) * 100).toFixed(1)}%` },
+    { label: noCogs ? (isEnglish ? "COGS (n/a)" : "COGS (no aplica)") : "COGS", value: results.totalCOGS, icon: Building2, color: "hsl(38, 90%, 55%)", sub: `${((results.totalCOGS / results.totalRevenue) * 100).toFixed(1)}%` },
     { label: tr(STR.grossProfitShort, isEnglish), value: results.grossProfit, icon: TrendingUp, color: "hsl(var(--primary))", sub: `${((results.grossProfit / results.totalRevenue) * 100).toFixed(1)}%` },
     { label: "EBITDA", value: results.ebitda, icon: BarChart3, color: "hsl(210, 60%, 50%)", sub: `${((results.ebitda / results.totalRevenue) * 100).toFixed(1)}%` },
     { label: tr(STR.netIncomeShort, isEnglish), value: results.netIncome, icon: Wallet, color: "hsl(142, 76%, 36%)", sub: `${((results.netIncome / results.totalRevenue) * 100).toFixed(1)}%` },
@@ -1072,6 +1274,22 @@ const Results = () => {
           </div>
         )}
 
+        {clientProfile && !handedReport && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>{isEnglish ? "Cost of sales (COGS) for this client:" : "Costo de ventas (COGS) de este cliente:"}</span>
+            <Select value={clientProfile.has_cogs ? "yes" : "no"} onValueChange={changeHasCogs} disabled={!canManageClients || savingCogs}>
+              <SelectTrigger className="h-8 w-auto min-w-[16rem] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes" className="text-xs">{isEnglish ? "Yes — it has cost of sales" : "Sí — tiene costo de ventas"}</SelectItem>
+                <SelectItem value="no" className="text-xs">{isEnglish ? "No — its costs are operating expenses" : "No — sus costos son gastos operativos"}</SelectItem>
+              </SelectContent>
+            </Select>
+            {noCogs && <span>{isEnglish ? "Its COGS-type costs are shown under Operating Expenses." : "Sus costos tipo COGS se muestran en Gastos operativos."}</span>}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
           {summaryCards.map((card, i) => (
             <Card key={card.label}
@@ -1140,8 +1358,16 @@ const Results = () => {
           <h2 className="text-lg font-bold text-foreground mb-4 opacity-0 animate-fade-in" style={{ animationDelay: "0.5s" }}>
             {tr(STR.detailedBreakdown, isEnglish)}
           </h2>
-          {results.sections.map((section, i) => (
-            <CollapsibleSection key={section.title} section={section} index={i} onReassign={!handedReport && clientRows ? openReassign : undefined} receiptLabel={receiptWord} />
+          {results.sections.filter((section) => section.kind !== "thirdParty").map((section, i) => (
+            <CollapsibleSection
+              key={section.title}
+              section={section}
+              index={i}
+              onReassign={!handedReport && clientRows ? openReassign : undefined}
+              onDocument={!handedReport && clientRows && canManageClients ? openDocument : undefined}
+              receiptLabel={receiptWord}
+              isEnglish={isEnglish}
+            />
           ))}
         </div>
 
@@ -1188,6 +1414,27 @@ const Results = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Third-party payments: information for 1099 tracking, kept apart from the P&L so nobody reads
+            it as part of the totals above. */}
+        {results.sections.filter((section) => section.kind === "thirdParty").map((section) => (
+          <div key={section.title} className="mb-8 rounded-2xl border-2 border-dashed border-sky-500/40 bg-sky-500/5 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <Info className="h-5 w-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-foreground">{tr(STR.thirdPartyBoxTitle, isEnglish)}</p>
+                <p className="text-xs text-muted-foreground">{tr(STR.thirdPartyBoxDesc, isEnglish)}</p>
+              </div>
+            </div>
+            <CollapsibleSection
+              section={{ ...section, note: undefined }}
+              index={0}
+              onDocument={!handedReport && clientRows && canManageClients ? openDocument : undefined}
+              receiptLabel={receiptWord}
+              isEnglish={isEnglish}
+            />
+          </div>
+        ))}
 
         {Array.isArray((results as any).annualSummary) && (results as any).annualSummary.length > 0 && (
           <Card className="bg-card border-border shadow-xl mb-8 opacity-0 animate-slide-up" style={{ animationDelay: "0.95s" }}>
@@ -1269,7 +1516,7 @@ const Results = () => {
                   <SelectContent>
                     {(Object.keys(REASSIGN_TAXONOMY) as TransactionList[]).map((list) => (
                       <SelectGroup key={list}>
-                        <SelectLabel>{tr(reassignListLabel(list), isEnglish)}</SelectLabel>
+                        <SelectLabel className="sticky top-0 z-10 bg-primary/15 text-primary font-bold uppercase tracking-wide text-[11px] py-1.5">{tr(reassignListLabel(list), isEnglish)}</SelectLabel>
                         {REASSIGN_TAXONOMY[list].map((category) => (
                           <SelectItem key={`${list}::${category}`} value={`${list}::${category}`}>
                             {translateCategory(category, isEnglish)}
@@ -1303,6 +1550,40 @@ const Results = () => {
             <Button onClick={handleConfirmReassign} disabled={!reassignTarget || savingReassign || (reassignNeedsSpecify && !reassignSpecify.trim())} className="neon-glow">
               {savingReassign ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {savingReassign ? tr(STR.reassignSaving, isEnglish) : tr(STR.reassignSave, isEnglish)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!docItem} onOpenChange={(o) => { if (!o && !savingDoc) setDocItem(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isEnglish ? "Document the check" : "Documentar el cheque"}</DialogTitle>
+            <DialogDescription>
+              {isEnglish ? "Who was it paid to and what for. It is saved with the transaction and shows in the reports and the 1099 list." : "A quién se le pagó y para qué. Se guarda con la transacción y sale en los reportes y en la lista de 1099."}
+            </DialogDescription>
+          </DialogHeader>
+          {docItem && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm flex items-center justify-between gap-2">
+                <span className="truncate font-medium">{docItem.name}</span>
+                <span className="font-semibold shrink-0">${docItem.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">{isEnglish ? "Payee" : "Destinatario"} *</label>
+                <Input autoFocus value={docPayee} onChange={(e) => setDocPayee(e.target.value)} placeholder={isEnglish ? "Who was it paid to? (person or company)" : "¿A quién se le pagó? (persona o empresa)"} className={docPayee.trim() ? "" : "border-destructive"} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">{isEnglish ? "Purpose" : "Propósito"} *</label>
+                <Input value={docPurpose} onChange={(e) => setDocPurpose(e.target.value)} placeholder={isEnglish ? "What was it for? (e.g. drywall labor)" : "¿Para qué fue? (ej. mano de obra drywall)"} className={docPurpose.trim() ? "" : "border-destructive"} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDocItem(null)} disabled={savingDoc}>{tr(STR.reassignCancel, isEnglish)}</Button>
+            <Button onClick={saveDocument} disabled={savingDoc || !docPayee.trim() || !docPurpose.trim()} className="neon-glow">
+              {savingDoc && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {tr(STR.reassignSave, isEnglish)}
             </Button>
           </DialogFooter>
         </DialogContent>

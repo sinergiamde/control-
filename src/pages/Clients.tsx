@@ -6,24 +6,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import ClientFormDialog from "@/components/ClientFormDialog";
+import { CLIENT_PROFILE_COLUMNS, industryLabel, type ClientProfile } from "@/utils/clientProfile";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Loader2, Plus, Pencil, Trash2, Check, X, Building2, Search, Crown, LayoutDashboard, User as UserIcon, Mail, Phone, ChevronRight,
+  Loader2, Plus, Pencil, Trash2, Building2, Search, Crown, LayoutDashboard, User as UserIcon, Mail, Phone, ChevronRight, Briefcase,
 } from "lucide-react";
 import { fetchClientNodes, type ClientNode } from "@/utils/clientTree";
 import { STR, tr } from "@/utils/i18n";
 
 const isDuplicateError = (message: string) => /duplicate|unique|23505/i.test(message);
 
-interface ClientDetails {
-  company: string | null;
-  email: string | null;
-  phone: string | null;
-}
-const EMPTY_FORM = { name: "", company: "", email: "", phone: "" };
-const NEW_COMPANY = "__new__";
 const NO_COMPANY = "__none__";
 
 /** Every client the signed-in person works with (RLS scopes it: TaxForYou admins see all, everyone
@@ -41,15 +34,11 @@ const Clients = () => {
   const [members, setMembers] = useState<Map<string, string[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [details, setDetails] = useState<Map<string, ClientDetails>>(new Map());
-  const [creating, setCreating] = useState(false);
-  const [companyChoice, setCompanyChoice] = useState<string>(NO_COMPANY);
+  const [details, setDetails] = useState<Map<string, ClientProfile>>(new Map());
+  // The add/edit client form: null client = new client.
+  const [formOpen, setFormOpen] = useState(false);
+  const [formClient, setFormClient] = useState<ClientProfile | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
-  const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchAll = async () => {
@@ -60,9 +49,9 @@ const Clients = () => {
       supabase.from("client_access").select("client_id, user_id"),
       supabase.from("profiles").select("user_id, name"),
       // Kept apart from the main list so the page still works on a database without these columns.
-      supabase.from("clients").select("id, company, email, phone"),
+      supabase.from("clients").select(CLIENT_PROFILE_COLUMNS),
     ]);
-    setDetails(new Map(((detailRows as (ClientDetails & { id: string })[]) || []).map((d) => [d.id, d])));
+    setDetails(new Map(((detailRows as ClientProfile[]) || []).map((d) => [d.id, d])));
     const counts = new Map<string, number>();
     (analysisRows || []).forEach((r: { client_id: string | null }) => {
       if (r.client_id) counts.set(r.client_id, (counts.get(r.client_id) || 0) + 1);
@@ -122,63 +111,29 @@ const Clients = () => {
   const fail = (description: string) => toast({ title: "Error", description, variant: "destructive" });
 
   const openCreate = () => {
-    setForm(EMPTY_FORM);
-    setCompanyChoice(companies.length > 0 ? NO_COMPANY : NEW_COMPANY);
-    setCreateOpen(true);
-  };
-
-  const handleCreate = async () => {
-    const name = form.name.trim();
-    const email = form.email.trim();
-    if (!name) { fail(t("clientNameEmptyError")); return; }
-    if (email && !/^\S+@\S+\.\S+$/.test(email)) { fail(tr(STR.clientEmailInvalid, isEnglish)); return; }
-    if (nodes.some((n) => n.name.trim().toLowerCase() === name.toLowerCase())) { fail(t("clientDuplicateError")); return; }
-    const company = companyChoice === NEW_COMPANY ? form.company.trim() : companyChoice === NO_COMPANY ? "" : companyChoice;
-    setCreating(true);
-    const { data: id, error } = await supabase.rpc("create_client", {
-      _name: name, _company: company || null, _email: email || null, _phone: form.phone.trim() || null,
-    });
-    setCreating(false);
-    if (error || !id) {
-      // PGRST202 / 42883: the database doesn't have the newer create_client yet.
-      const missing = error && /PGRST202|42883|schema cache|could not find the function/i.test(`${error.code} ${error.message}`);
-      fail(
-        missing ? tr(STR.dbUpdateNeeded, isEnglish)
-          : error && isDuplicateError(`${error.message} ${error.code}`) ? t("clientDuplicateError")
-          : error?.message || "—"
-      );
-      return;
-    }
-    setNodes((prev) => [...prev, { id, name, parent_id: null }]);
-    setDetails((prev) => new Map(prev).set(id, { company: company || null, email: email || null, phone: form.phone.trim() || null }));
-    setOpenGroups((prev) => new Set(prev).add(company));
-    setCreateOpen(false);
-    toast({ title: "✅", description: `${t("clientCreated")} — ${name}` });
+    setFormClient(null);
+    setFormOpen(true);
   };
 
   const startEdit = (client: ClientNode) => {
-    setEditingId(client.id);
-    setEditingName(client.name);
+    setFormClient(
+      details.get(client.id) ?? {
+        id: client.id, name: client.name, owner_name: null, industry: null, description: null,
+        email: null, phone: null, company: null, has_cogs: true,
+      }
+    );
+    setFormOpen(true);
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditingName("");
-  };
-
-  const handleSaveEdit = async (id: string) => {
-    const name = editingName.trim();
-    if (!name) { fail(t("clientNameEmptyError")); return; }
-    setSaving(true);
-    const { data, error } = await supabase.from("clients").update({ name }).eq("id", id).select("id");
-    setSaving(false);
-    if (error || !data?.length) {
-      fail(error && isDuplicateError(`${error.message} ${error.code}`) ? t("clientDuplicateError") : error?.message || "—");
-      return;
-    }
-    setNodes((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
-    toast({ title: "✅", description: t("clientRenamed") });
-    cancelEdit();
+  const handleSaved = (profile: ClientProfile) => {
+    setDetails((prev) => new Map(prev).set(profile.id, profile));
+    setNodes((prev) =>
+      prev.some((n) => n.id === profile.id)
+        ? prev.map((n) => (n.id === profile.id ? { ...n, name: profile.name } : n))
+        : [...prev, { id: profile.id, name: profile.name, parent_id: null }]
+    );
+    setOpenGroups((prev) => new Set(prev).add(profile.company?.trim() || ""));
+    toast({ title: "✅", description: `${formClient ? t("clientRenamed") : t("clientCreated")} — ${profile.name}` });
   };
 
   /** Deletes the client with its statements, receipts and saved reports. Files go first through the
@@ -218,27 +173,7 @@ const Clients = () => {
         style={{ animationDelay: `${0.03 * i}s` }}
       >
         <div className="flex items-center justify-between gap-3 p-3">
-          {editingId === client.id ? (
-            <>
-              <Input
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleSaveEdit(client.id); if (e.key === "Escape") cancelEdit(); }}
-                autoFocus
-                maxLength={150}
-                className="bg-muted border-border text-foreground h-9"
-              />
-              <div className="flex items-center gap-1 shrink-0">
-                <Button size="sm" variant="ghost" disabled={saving} onClick={() => handleSaveEdit(client.id)}
-                  className="text-primary hover:text-primary hover:bg-primary/10">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                </Button>
-                <Button size="sm" variant="ghost" disabled={saving} onClick={cancelEdit} className="text-muted-foreground">
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </>
-          ) : (
+          {(
             <>
               <button type="button" onClick={() => navigate(`/clients/${client.id}`)} className="flex items-center gap-2 min-w-0 text-left group">
                 <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
@@ -246,6 +181,16 @@ const Clients = () => {
                 </div>
                 <div className="min-w-0">
                   <p className="font-semibold text-foreground truncate group-hover:text-primary">{client.name}</p>
+                  {(details.get(client.id)?.owner_name || details.get(client.id)?.industry) && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      {details.get(client.id)?.owner_name && (
+                        <span className="inline-flex items-center gap-1"><UserIcon className="h-3 w-3" /> {details.get(client.id)?.owner_name}</span>
+                      )}
+                      {details.get(client.id)?.industry && (
+                        <span className="inline-flex items-center gap-1 ml-1.5"><Briefcase className="h-3 w-3" /> {industryLabel(details.get(client.id)?.industry, isEnglish)}</span>
+                      )}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground truncate">
                     {statementCounts.get(client.id) || 0} {t("statementsCountLabel")}
                     {details.get(client.id)?.email && (
@@ -324,7 +269,8 @@ const Clients = () => {
                 {isAdmin ? <Crown className="h-5 w-5 text-primary" /> : <Building2 className="h-5 w-5 text-primary" />}
                 {isAdmin ? "TaxForYou" : t("clientsPageTitle")}
                 <span className="text-xs font-normal text-muted-foreground">
-                  {isAdmin && `${t("ownerCaption")} · `}{nodes.length} {t("customerCompaniesWord")} · {companies.length} {tr(STR.companiesWord, isEnglish)}
+                  {isAdmin && `${t("ownerCaption")} · `}{nodes.length} {t("customerCompaniesWord")}
+                  {companies.length > 0 && ` · ${companies.length} ${isEnglish ? "groups" : "grupos"}`}
                 </span>
               </CardTitle>
               <div className="relative w-full max-w-xs">
@@ -384,61 +330,14 @@ const Clients = () => {
         </Card>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={(open) => { if (!creating) setCreateOpen(open); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-primary" />
-              {tr(STR.newClientTitle, isEnglish)}
-            </DialogTitle>
-            <DialogDescription>{tr(STR.newClientDesc, isEnglish)}</DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => { e.preventDefault(); handleCreate(); }}
-          >
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-foreground">{tr(STR.clientNameLabel, isEnglish)} *</label>
-              <Input maxLength={150} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("clientNamePlaceholder")} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-foreground">{tr(STR.clientCompanyLabel, isEnglish)}</label>
-              <Select value={companyChoice} onValueChange={setCompanyChoice}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_COMPANY}>{tr(STR.noCompanyGroup, isEnglish)}</SelectItem>
-                  {companies.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                  <SelectItem value={NEW_COMPANY}>{tr(STR.newCompanyOption2, isEnglish)}</SelectItem>
-                </SelectContent>
-              </Select>
-              {companyChoice === NEW_COMPANY && (
-                <Input
-                  autoFocus maxLength={150} value={form.company}
-                  onChange={(e) => setForm({ ...form, company: e.target.value })}
-                  placeholder={tr(STR.clientCompanyPlaceholder, isEnglish)} className="mt-2"
-                />
-              )}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-foreground">{tr(STR.clientEmailLabel, isEnglish)}</label>
-                <Input type="email" maxLength={150} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="cliente@correo.com" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-foreground">{tr(STR.clientPhoneLabel, isEnglish)}</label>
-                <Input type="tel" inputMode="tel" maxLength={40} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 305 555 1234" />
-              </div>
-            </div>
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)} disabled={creating}>{t("cancelWord")}</Button>
-              <Button type="submit" disabled={creating}>
-                {creating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
-                {tr(STR.saveClientButton, isEnglish)}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ClientFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        client={formClient}
+        groups={companies}
+        takenNames={nodes.filter((n) => n.id !== formClient?.id).map((n) => n.name)}
+        onSaved={handleSaved}
+      />
     </div>
   );
 };

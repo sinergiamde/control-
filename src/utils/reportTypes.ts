@@ -96,8 +96,7 @@ export type TransactionList = "revenues" | "cogs" | "opex" | "fees" | "personal"
 export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
   revenues: ["Bank transfer", "Wire transfer", "Zelle", "Check", "Cash deposit", "Refunds and returns", "Other income (specify)"],
   cogs: [
-    "Materials", "Supplies", "Storage", "Startup and moving costs", "Subcontractor costs",
-    "Tolls (work)", "Permits",
+    "Materials", "Supplies", "Storage", "Subcontractor costs", "Permits", "Other cost of sales (specify)",
   ],
   opex: [
     "Payroll", "Rent (lease or mortgage)", "Utilities (electric/water)", "Internet", "Business insurance",
@@ -106,7 +105,8 @@ export const REASSIGN_TAXONOMY: Record<TransactionList, string[]> = {
     "Website and hosting", "Training and development", "Licenses and permits", "Legal and compliance fees",
     "Professional services", "Office supplies", "Office furniture and equipment", "Operating costs",
     "Bad debts or loans", "Travel expenses", "Hotels or lodging", "Meals (work — fast food/coffee/snacks)",
-    "Credit card payment", "Business loan",
+    "Credit card payment", "Business loan", "Startup and moving costs", "Tolls (work)", "Uniforms (work)",
+    "Other operating expense (specify)",
   ],
   fees: ["Bank fees"],
   personal: [
@@ -226,6 +226,7 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
     source[list] = kept;
   }
 
+  const noCogs = source.noCogs === true;
   const rebucketed: Record<TransactionList, any[]> = { revenues: [], cogs: [], opex: [], fees: [], personal: [] };
   // An earlier version kept incoming transfers in a separate `transfersIn` list, outside income.
   if (Array.isArray(source.transfersIn)) {
@@ -260,13 +261,16 @@ export const normalizeAnalysisTransactions = (source: any): { notesEn: string[];
         continue;
       }
       const canonical = item?.category ? CANONICAL_LIST_BY_CATEGORY[item.category] : undefined;
-      if (canonical && canonical !== list) {
-        rebucketed[canonical].push(item);
+      // A business without cost of sales reports those costs as operating expenses (display only:
+      // the stored statement keeps its COGS categories, so the setting can be turned back on).
+      const target = (l: TransactionList): TransactionList => (noCogs && l === "cogs" ? "opex" : l);
+      if (canonical && canonical !== list && target(canonical) !== list) {
+        rebucketed[target(canonical)].push(item);
         const desc = item?.desc || item?.name || "?";
         notesEn.push(`Moved "${desc}" (category "${item.category}") from ${list} to ${canonical} for consistency with other statements.`);
         notesEs.push(`Se movió "${desc}" (categoría "${item.category}") de ${list} a ${canonical} para que sea consistente con los demás extractos.`);
       } else {
-        rebucketed[list].push(item);
+        rebucketed[target(list)].push(item);
       }
     }
   }

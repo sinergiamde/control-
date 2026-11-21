@@ -127,10 +127,16 @@ export interface FilteredStatement {
 
 /** Keeps only the transactions inside `interval` (null = everything). Returns null when nothing
  * in the statement falls inside it. */
-export const filterStatement = (row: StatementRow, interval: DateInterval | null): FilteredStatement | null => {
+export const filterStatement = (
+  row: StatementRow,
+  interval: DateInterval | null,
+  options: { noCogs?: boolean } = {}
+): FilteredStatement | null => {
   const data = structuredClone(row.full_analysis ?? {});
   const src = getSource(data);
   if (!src || typeof src !== "object") return null;
+  // A client without cost of sales: its COGS-type costs are shown as operating expenses.
+  if (options.noCogs) src.noCogs = true;
   // Same duplicate-removal and category rebucketing the reports apply, so the numbers here match
   // the PDF/Excel for the same selection.
   normalizeAnalysisTransactions(src);

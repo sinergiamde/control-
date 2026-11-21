@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ClientFormDialog from "@/components/ClientFormDialog";
 import { Check, ChevronsUpDown, CornerDownRight, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -79,36 +80,17 @@ export const ClientCombobox = ({
     setQuery("");
   };
 
-  const handleCreate = async () => {
+  // A new client is always created with its full profile, starting from what was typed.
+  const [formOpen, setFormOpen] = useState(false);
+  const handleCreate = () => {
     if (!trimmedQuery || creating) return;
     if (exactMatch) { select(exactMatch); return; }
-
-    setCreating(true);
-    // create_client also gives the creator access to the new client (they own it).
-    const { data: newId, error } = await supabase.rpc("create_client", { _name: trimmedQuery });
-    const data = newId ? { id: newId, name: trimmedQuery, parent_id: null } : null;
-    setCreating(false);
-
-    if (error) {
-      // Someone else may have created the same name a moment ago (case-insensitive unique index) —
-      // recover by re-checking instead of showing an error for what is really a duplicate-safe retry.
-      const list = sortAsTree(await fetchClientNodes());
-      setClients(list);
-      const match = list.find(
-        (c) => (c.parent_id ?? null) === createParentId && c.name.toLowerCase() === trimmedQuery.toLowerCase()
-      );
-      if (match) select(match);
-      return;
-    }
-
-    if (data) {
-      const created = data as ClientNode;
-      setClients((prev) => sortAsTree([...prev, created]));
-      select(created);
-    }
+    setOpen(false);
+    setFormOpen(true);
   };
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
@@ -163,5 +145,17 @@ export const ClientCombobox = ({
         </Command>
       </PopoverContent>
     </Popover>
+    <ClientFormDialog
+      open={formOpen}
+      onOpenChange={setFormOpen}
+      initialName={trimmedQuery}
+      takenNames={clients.map((c) => c.name)}
+      onSaved={(profile) => {
+        const created = { id: profile.id, name: profile.name, parent_id: null } as ClientNode;
+        setClients((prev) => sortAsTree([...prev, created]));
+        select(created);
+      }}
+    />
+    </>
   );
 };

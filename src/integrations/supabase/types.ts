@@ -29,6 +29,8 @@ export type Database = {
           top_category: string
           total_spent: number
           user_id: string
+          file_hash: string | null
+          statement_key: string | null
         }
         Insert: {
           client_id?: string | null
@@ -46,6 +48,8 @@ export type Database = {
           top_category?: string
           total_spent?: number
           user_id: string
+          file_hash?: string | null
+          statement_key?: string | null
         }
         Update: {
           client_id?: string | null
@@ -63,6 +67,8 @@ export type Database = {
           top_category?: string
           total_spent?: number
           user_id?: string
+          file_hash?: string | null
+          statement_key?: string | null
         }
         Relationships: [
           {
@@ -168,6 +174,10 @@ export type Database = {
           name: string
           parent_id: string | null
           updated_at: string
+          owner_name: string | null
+          industry: string | null
+          description: string | null
+          has_cogs: boolean
         }
         Insert: {
           created_at?: string
@@ -176,6 +186,13 @@ export type Database = {
           name: string
           parent_id?: string | null
           updated_at?: string
+          owner_name?: string | null
+          industry?: string | null
+          description?: string | null
+          has_cogs?: boolean
+          company?: string | null
+          email?: string | null
+          phone?: string | null
         }
         Update: {
           created_at?: string
@@ -184,6 +201,13 @@ export type Database = {
           name?: string
           parent_id?: string | null
           updated_at?: string
+          owner_name?: string | null
+          industry?: string | null
+          description?: string | null
+          has_cogs?: boolean
+          company?: string | null
+          email?: string | null
+          phone?: string | null
         }
         Relationships: [
           {
@@ -542,7 +566,16 @@ export type Database = {
         Returns: undefined
       }
       create_client: {
-        Args: { _name: string; _company?: string | null; _email?: string | null; _phone?: string | null }
+        Args: {
+          _company?: string | null
+          _description?: string | null
+          _email?: string | null
+          _has_cogs?: boolean | null
+          _industry?: string | null
+          _name: string
+          _owner?: string | null
+          _phone?: string | null
+        }
         Returns: string
       }
       request_subscription: {
