@@ -15,6 +15,7 @@ import { normalizeAnalysisTransactions } from "@/utils/reportTypes";
 import { fileSha256, statementKey } from "@/utils/statementIdentity";
 import { fetchClientProfile, industryLabel } from "@/utils/clientProfile";
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/integrations/supabase/config";
+import { readAnalyzerAnswer, type AnalyzerProgress } from "@/utils/analyzerStream";
 
 const ANALYZE_API_URL = `${SUPABASE_URL}/functions/v1/analyze-statement`;
 const ACCEPTED_EXTENSIONS = [".pdf", ".csv", ".xlsx", ".xls"];
@@ -114,6 +115,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentFileName, setCurrentFileName] = useState<string>("");
   const [processedCount, setProcessedCount] = useState(0);
+  const [liveProgress, setLiveProgress] = useState<AnalyzerProgress | null>(null);
   const [targetId, setTargetId] = useState<string>(() => (allowNewClient ? initialClientChoice(targets, true) : targets[0]?.id ?? ""));
   const [newClientName, setNewClientName] = useState("");
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -169,7 +171,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
     return (data as any[] | null)?.[0] ?? null;
   };
 
-  const analyzeOne = async (file: File, clientId: string) => {
+  const analyzeOne = async (file: File, clientId: string, onProgress: (p: AnalyzerProgress) => void) => {
     // The same file can't be analyzed twice: checked before spending on the AI.
     const fileHash = await fileSha256(file);
     if (fileHash) {
@@ -199,6 +201,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
           fileName: file.name,
           lang,
           clientContext,
+          progress: true,
         }),
       });
     } catch (networkError) {
@@ -206,14 +209,18 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
       throw new Error(t("analyzerNoConnection"));
     }
 
-    // The analyzer streams its answer (spaces while it works, then the JSON), so a body that can't be
-    // parsed means the connection was cut before it finished.
-    const raw = await response.text().catch(() => "");
-    let data: any = null;
-    try {
-      data = raw.trim() ? JSON.parse(raw) : null;
-    } catch {
-      data = null;
+    // The analyzer streams its answer (progress lines while it works, then the result), so an answer
+    // without a result means the connection was cut before it finished.
+    const answer = await readAnalyzerAnswer(response, onProgress);
+    if (answer.error !== null) throw new Error(answer.error || t("analyzerFailed"));
+    const raw = answer.raw;
+    let data: any = answer.result !== undefined ? answer.result : null;
+    if (answer.result === undefined) {
+      try {
+        data = raw.trim() ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
     }
     // Errors from the platform in front of the analyzer arrive in English and technical
     // ("Request idle timeout limit (150s) reached"): show the person what happened in plain words.
@@ -230,6 +237,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
     if (data.error) throw new Error(typeof data.error === "string" ? data.error : t("analyzerFailed"));
 
     if (!user) return { data, analysisId: undefined };
+    onProgress({ pct: 100, stage: "saving", done: 0, expected: null });
 
     const src: any = getAnalysisSource(data);
     const period = src.period || "";
@@ -296,6 +304,18 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
     return { data, analysisId: inserted?.id as string | undefined };
   };
 
+  /** "Clasificando transacciones (52 de ~141)" and the like. */
+  const stageText = (p: AnalyzerProgress) => {
+    if (p.stage === "classifying") {
+      const counted = p.expected ? `${p.done} ${tr(STR.ofWord, isEnglish)} ~${p.expected}` : `${p.done}`;
+      return `${tr(STR.stageClassifying, isEnglish)} (${counted})`;
+    }
+    if (p.stage === "checking") return tr(STR.stageChecking, isEnglish);
+    if (p.stage === "summary") return tr(STR.stageSummary, isEnglish);
+    if (p.stage === "saving") return tr(STR.stageSaving, isEnglish);
+    return tr(STR.stageReading, isEnglish);
+  };
+
   const handleAnalyze = async () => {
     if (files.length === 0 || !user) return;
     const resolved = await resolveClientChoice(targetId, newClientName, {
@@ -324,8 +344,12 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       setCurrentFileName(f.name);
+      setLiveProgress(null);
       try {
-        const outcome = await analyzeOne(f, clientId);
+        const outcome = await analyzeOne(f, clientId, (p) => {
+          setLiveProgress((prev) => (p.stage === "saving" && prev ? { ...prev, pct: 100, stage: "saving" } : p));
+          setUploadProgress(((i + Math.min(100, Math.max(0, p.pct)) / 100) / files.length) * 100);
+        });
         lastResult = outcome.data;
         lastAnalysisId = outcome.analysisId;
         saved++;
@@ -339,6 +363,7 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
     }
 
     setLoading(false);
+    setLiveProgress(null);
 
     if (errors.length > 0) {
       toast({
@@ -507,7 +532,13 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
-            <p className="text-xs text-muted-foreground">{t("analyzingPatience")}</p>
+            {liveProgress ? (
+              <p className="text-xs font-medium text-foreground" aria-live="polite">
+                {tr(STR.statementReview, isEnglish)}: {Math.round(liveProgress.pct)}% · {stageText(liveProgress)}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">{t("analyzingPatience")}</p>
+            )}
           </div>
         )}
 

@@ -798,6 +798,13 @@ export const STR = {
   expenseMixTitle: { en: "Expense mix", es: "Distribución de gastos" },
   expenseMixDesc: { en: "All-time, across every client", es: "Histórico, de todos los clientes" },
   orSelectFolder: { en: "or select a whole folder", es: "o selecciona una carpeta completa" },
+  statementReview: { en: "Statement review", es: "Revisión del extracto" },
+  stageReading: { en: "Reading the statement", es: "Leyendo el extracto" },
+  stageClassifying: { en: "Classifying transactions", es: "Clasificando transacciones" },
+  stageChecking: { en: "Checking against the bank's totals", es: "Verificando contra los totales del banco" },
+  stageSummary: { en: "Writing the summary and alerts", es: "Preparando el resumen y las alertas" },
+  stageSaving: { en: "Saving", es: "Guardando" },
+  ofWord: { en: "of", es: "de" },
   confirmLeaveWithFiles: {
     en: "You have file(s) added but not analyzed yet. Leaving this screen loses them (no cost/analysis has happened yet, but you'll have to add them again). Continue?",
     es: "Tienes archivo(s) agregados que aún no se han analizado. Si sales de esta pantalla se pierden (no se ha gastado ni analizado nada todavía, pero tendrás que volver a agregarlos). ¿Continuar?",
