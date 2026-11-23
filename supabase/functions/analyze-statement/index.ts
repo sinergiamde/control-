@@ -506,6 +506,86 @@ const monthlySummary = (r: any, periodStart: string, periodEnd: string) => {
     .map(([month, m]) => ({ month, revenue: round2(m.revenue), expenses: round2(m.expenses), net: round2(m.revenue - m.expenses) }));
 };
 
+// ---- The same statement can't be analyzed twice -----------------------------------------------------
+// Three fingerprints, all checked here on the server (and again by the database when the page saves):
+//  - file_hash: SHA-256 of the file itself (the same PDF, even renamed) — checked before any AI work;
+//  - statement_key: account (last 4), period and opening/closing balances as the bank printed them —
+//    checked as soon as the account details are read, which stops the rest of the reading;
+//  - content_hash: the transactions themselves (month-day and amount of each) — checked at the end.
+// statement_key must stay identical to statementKey() in src/utils/statementIdentity.ts.
+
+const sha256Hex = async (bytes: Uint8Array<ArrayBuffer>) =>
+  Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+const US_RANGE = /(\d{1,2})\/(\d{1,2})\/(\d{4})\s*(?:-|–|—|to|al|a)\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i;
+const ISO_RANGE = /(\d{4})-(\d{1,2})-(\d{1,2})\s*(?:-|–|—|to|al|a)\s*(\d{4})-(\d{1,2})-(\d{1,2})/i;
+const pad2 = (n: string | number) => String(n).padStart(2, "0");
+const isoDay = (v: unknown) => {
+  const m = String(v ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+};
+const headerBalance = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > -999999990 ? v : null);
+const boxBalance = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v !== -1 ? v : null);
+const statementKeyOf = (src: any): string | null => {
+  const info = src?.accountInfo || {};
+  const box = src?.bankSummary?.found ? src.bankSummary : {};
+  let start = isoDay(info.periodStart);
+  let end = isoDay(info.periodEnd);
+  if (!start || !end) {
+    const text = String(src?.period || "");
+    const us = text.match(US_RANGE);
+    const iso = text.match(ISO_RANGE);
+    if (us) {
+      start = `${us[3]}-${pad2(us[1])}-${pad2(us[2])}`;
+      end = `${us[6]}-${pad2(us[4])}-${pad2(us[5])}`;
+    } else if (iso) {
+      start = `${iso[1]}-${pad2(iso[2])}-${pad2(iso[3])}`;
+      end = `${iso[4]}-${pad2(iso[5])}-${pad2(iso[6])}`;
+    }
+  }
+  const opening = headerBalance(info.beginningBalance) ?? boxBalance(box.beginningBalance);
+  const closing = headerBalance(info.endingBalance) ?? boxBalance(box.endingBalance);
+  if (!start || !end || opening === null || closing === null) return null;
+  const last4 = String(info.accountNumberLast4 || "").replace(/\D/g, "").slice(-4) || "----";
+  return [last4, start, end, opening.toFixed(2), closing.toFixed(2)].join("|");
+};
+
+/** "MM-DD" of a transaction date as statements print it ("02/03", "2/3/25", "2025-02-03", "Feb 3"). */
+const monthDayOf = (date: unknown): string | null => {
+  const s = String(date ?? "").trim().toLowerCase();
+  let m = s.match(/^\d{4}-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${pad2(m[1])}-${pad2(m[2])}`;
+  m = s.match(/^(\d{1,2})[/-](\d{1,2})/);
+  if (m) return `${pad2(m[1])}-${pad2(m[2])}`;
+  const named = s.match(/^([a-z]{3})[a-z]*\.?\s+(\d{1,2})\b/);
+  if (named && MONTH_NAMES.includes(named[1])) return `${pad2(MONTH_NAMES.indexOf(named[1]) + 1)}-${pad2(named[2])}`;
+  return null;
+};
+/** SHA-256 of the statement's transactions (month-day and cents of each, sorted). Null when a date
+ * can't be read or there are fewer than 5 transactions (too little to tell two statements apart). */
+const contentHashOf = async (r: any): Promise<string | null> => {
+  const entries: string[] = [];
+  for (const list of [...SECTIONS, "transfersIn"]) {
+    for (const item of Array.isArray(r?.[list]) ? r[list] : []) {
+      const day = monthDayOf(item?.date);
+      if (!day) return null;
+      entries.push(`${day}|${Math.round(moneyNumber(item?.amt) * 100)}`);
+    }
+  }
+  if (entries.length < 5) return null;
+  entries.sort();
+  return sha256Hex(new TextEncoder().encode(`v1|${entries.join("\n")}`));
+};
+
+const duplicateMessage = (where: string) =>
+  `Este extracto ya está en el sistema${where ? ` (${where})` : ""}. No se puede analizar dos veces, aunque el archivo tenga otro nombre o se haya descargado de nuevo del banco.`;
+
+/** Looks for a statement already saved with this fingerprint, across every client (the page may not see
+ * other people's clients). Returns where it is — client and period when this person can see it, "" when
+ * not — or null when there is none. Lookup errors don't block: the database refuses duplicates again when
+ * the page saves. */
+type DuplicateLookup = (column: "file_hash" | "statement_key" | "content_hash", value: string | null) => Promise<string | null>;
+
 // ---- Calling Claude ----------------------------------------------------------------------------
 
 // Model that classifies statements, set with the ANALYZE_MODEL secret. Claude Opus 5.5 always thinks,
@@ -804,7 +884,7 @@ const synthesisInput = (r: any, contextNote: string) => {
   return [{ type: "text", text: lines.join("\n") }];
 };
 
-const runAnalysis = async (apiKey: string, input: StatementInput, startedAt: number, progress: ProgressState) => {
+const runAnalysis = async (apiKey: string, input: StatementInput, startedAt: number, progress: ProgressState, duplicateOf: DuplicateLookup) => {
   const deadlineAt = startedAt + DEADLINE_MS;
   const plan = input.kind === "pdf" ? await planPdf(input) : planText(input);
   progress.pieces = plan.pieces.map((p) => ({ weight: p.weight, count: 0, done: false }));
@@ -824,8 +904,16 @@ const runAnalysis = async (apiKey: string, input: StatementInput, startedAt: num
       system: OVERVIEW_PROMPT,
       messages: [{ role: "user", content: [...plan.whole.map(withoutCache), { type: "text", text: "Extrae los datos de la cuenta y el resumen impreso por el banco según las instrucciones." }] }],
     }, deadlineAt, cancel.signal)
-      .then((o) => {
+      .then(async (o) => {
         progress.expected = expectedTransactions(o?.bankSummary);
+        // A copy of a statement already in the system stops here, before the pages finish reading it.
+        const key = statementKeyOf({
+          period: o?.period,
+          bankSummary: o?.bankSummary,
+          accountInfo: { accountNumberLast4: o?.accountNumberLast4, beginningBalance: o?.beginningBalance, endingBalance: o?.endingBalance, periodStart: o?.periodStart, periodEnd: o?.periodEnd },
+        });
+        const where = await duplicateOf("statement_key", key);
+        if (where !== null) throw new UserFacingError(duplicateMessage(where));
         return o;
       })
       .catch(fail),
@@ -989,6 +1077,9 @@ ${flat.map((x, i) => `#${i + 1} [${x.section}] ${x.item?.date ?? ""} | ${x.item?
   result.alerts_en = strings(synth?.alerts_en);
   result.alerts_es = strings(synth?.alerts_es);
   result.annualSummary = monthlySummary(result, periodStart, periodEnd);
+  result.contentHash = await contentHashOf(result);
+  const sameContent = await duplicateOf("content_hash", result.contentHash);
+  if (sameContent !== null) throw new UserFacingError(duplicateMessage(sameContent));
   const gapsFinal = reconcileGaps(result);
   result.verification = {
     checked: gapsFinal !== null,
@@ -1058,6 +1149,36 @@ serve(async (req) => {
       throw new UserFacingError("El servidor todavía no tiene configurada la clave de la IA. Avísale al administrador.");
     }
 
+    // Statements already in the system are refused before any AI work (see "can't be analyzed twice").
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const adminClient = serviceKey ? createClient(Deno.env.get("SUPABASE_URL")!, serviceKey, { auth: { persistSession: false } }) : null;
+    if (!adminClient) console.error("analyze-statement: SUPABASE_SERVICE_ROLE_KEY missing, duplicate checks rely on the database alone");
+    const duplicateOf: DuplicateLookup = async (column, value) => {
+      if (!value || !adminClient) return null;
+      const { data: found, error } = await adminClient.from("analyses").select("id").eq(column, value).limit(1);
+      if (error) {
+        console.error(`analyze-statement: duplicate lookup by ${column} failed:`, error.message);
+        return null;
+      }
+      if (!found?.length) return null;
+      const { data: visible } = await supabaseClient.from("analyses").select("period, clients(name)").eq("id", found[0].id).maybeSingle();
+      const v = visible as { period?: string | null; clients?: { name?: string } | null } | null;
+      return v ? [v.clients?.name, v.period].filter(Boolean).join(" · ") : "";
+    };
+    let fileBytes: Uint8Array<ArrayBuffer>;
+    try {
+      fileBytes = base64ToBytes(fileBase64);
+    } catch {
+      throw new UserFacingError("No se pudo leer el archivo. Vuelve a seleccionarlo e inténtalo de nuevo.");
+    }
+    const sameFile = await duplicateOf("file_hash", await sha256Hex(fileBytes));
+    if (sameFile !== null) {
+      return new Response(JSON.stringify({ error: duplicateMessage(sameFile) }), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const normalizedType = String(mediaType || "").toLowerCase();
     const lowerName = String(fileName || "").toLowerCase();
     const isPdf = normalizedType.includes("pdf") || lowerName.endsWith(".pdf");
@@ -1098,7 +1219,7 @@ serve(async (req) => {
         let result: unknown = null;
         let errorMessage: string | null = null;
         try {
-          result = await runAnalysis(ANTHROPIC_API_KEY, input, requestStartedAt, progress);
+          result = await runAnalysis(ANTHROPIC_API_KEY, input, requestStartedAt, progress, duplicateOf);
         } catch (error) {
           console.error("analyze-statement error:", error);
           errorMessage = userMessageFor(error);

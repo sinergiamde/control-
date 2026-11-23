@@ -29,6 +29,7 @@ export type Database = {
           top_category: string
           total_spent: number
           user_id: string
+          content_hash: string | null
           file_hash: string | null
           statement_key: string | null
         }
@@ -48,6 +49,7 @@ export type Database = {
           top_category?: string
           total_spent?: number
           user_id: string
+          content_hash?: string | null
           file_hash?: string | null
           statement_key?: string | null
         }
@@ -67,6 +69,7 @@ export type Database = {
           top_category?: string
           total_spent?: number
           user_id?: string
+          content_hash?: string | null
           file_hash?: string | null
           statement_key?: string | null
         }

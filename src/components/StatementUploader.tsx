@@ -292,6 +292,8 @@ const StatementUploader = ({ targets, onUploaded, onPendingChange, allowNewClien
         top_category: getTopCategory(src),
         file_hash: fileHash,
         statement_key: key,
+        // The analyzer's fingerprint of the transactions; the database refuses a second copy.
+        content_hash: typeof data?.contentHash === "string" ? data.contentHash : null,
       })
       .select("id")
       .single();
